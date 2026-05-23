@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>nightdrive · saved</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="saved-page">
+
+  <!-- Loading veil -->
+  <div class="loading-veil"><div class="loading-dot"></div></div>
+
+  <!-- Layer 0 — Road (calmer, midnight mode) -->
+  <div id="road-bg"></div>
+
+  <!-- Layer 10 — FFT Ocean sides (midnight mood) -->
+  <iframe
+    id="ocean-iframe-left"
+    class="ocean-iframe"
+    src="ocean-view.html?side=left&mode=midnight"
+    scrolling="no"
+    frameborder="0"
+  ></iframe>
+  <iframe
+    id="ocean-iframe-right"
+    class="ocean-iframe"
+    src="ocean-view.html?side=right&mode=midnight"
+    scrolling="no"
+    frameborder="0"
+  ></iframe>
+
+  <!-- Atmospheric overlays -->
+  <div class="horizon-overlay"></div>
+  <div class="vignette"></div>
+
+  <!-- Text trail for "saved" page title -->
+  <div id="text-trail-wrap"></div>
+
+  <!-- UI -->
+  <div class="ui-layer">
+
+    <nav class="nav">
+      <div class="nav__logo">nd</div>
+      <div class="nav__links">
+        <a href="index.html" class="nav__link">← drive</a>
+      </div>
+    </nav>
+
+    <!-- Page title (text trail renders "saved" into #text-trail-wrap) -->
+    <div class="saved-header">
+      <span class="sr-only">saved</span>
+      <p class="saved-sub">moments from the road</p>
+    </div>
+
+    <!-- Scrollable fragments -->
+    <div class="saved-scroll">
+      <div class="fragments">
+
+        <div class="fragment-card">
+          <div class="fragment__index">01 — route</div>
+          <div class="fragment__title">saved route</div>
+          <div class="fragment__sub">
+            coastal highway north<br>
+            clear conditions — low traffic
+          </div>
+          <div class="fragment__time">01:44 AM</div>
+        </div>
+
+        <div class="fragment-card">
+          <div class="fragment__index">02 — memory</div>
+          <div class="fragment__title">coastline memory</div>
+          <div class="fragment__sub">
+            silver moon on dark water<br>
+            guardrail flicker — 140 km/h
+          </div>
+          <div class="fragment__time">02:17 AM</div>
+        </div>
+
+        <div class="fragment-card">
+          <div class="fragment__index">03 — night</div>
+          <div class="fragment__title">after midnight</div>
+          <div class="fragment__sub">
+            the city fell behind<br>
+            only the road and the horizon
+          </div>
+          <div class="fragment__time">02:58 AM</div>
+        </div>
+
+        <div class="fragment-card">
+          <div class="fragment__index">04 — signal</div>
+          <div class="fragment__title">radio signal</div>
+          <div class="fragment__sub">
+            lost frequency · static<br>
+            deep harbor — no lights
+          </div>
+          <div class="fragment__time">03:31 AM</div>
+        </div>
+
+        <div class="fragment-card">
+          <div class="fragment__index">05 — glow</div>
+          <div class="fragment__title">metro horizon</div>
+          <div class="fragment__sub">
+            violet edge of the city<br>
+            bridge lights — still moving
+          </div>
+          <div class="fragment__time">03:52 AM</div>
+        </div>
+
+        <div class="fragment-card">
+          <div class="fragment__index">06 — distance</div>
+          <div class="fragment__title">far coast</div>
+          <div class="fragment__sub">
+            no markers left<br>
+            only depth and dark water
+          </div>
+          <div class="fragment__time">04:08 AM</div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="bottom-bar">
+      <span>— saved routes</span>
+      <span>After Midnight</span>
+      <span>archive · 6 fragments</span>
+    </div>
+
+  </div>
+
+  <style>
+    .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}
+  </style>
+
+  <!-- Scripts -->
+  <script src="references/infinite-lights-demo/js/three.min.js"></script>
+  <script src="references/infinite-lights-demo/js/postprocessing.min.js"></script>
+  <script src="references/infinite-lights-demo/js/InfiniteLights.js"></script>
+  <script src="references/infinite-lights-demo/js/Distortions.js"></script>
+  <script src="js/texttrail.js"></script>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+
+      /* CSS glow for midnight */
+      document.documentElement.style.setProperty('--c-glow-rgb', '4, 8, 18');
+
+      /* Road — calmer midnight settings */
+      var roadEl = document.getElementById('road-bg');
+      try {
+        var roadApp = new App(roadEl, {
+          onSpeedUp: function(){}, onSlowDown: function(){},
+          distortion: LongRaceDistortion,
+          length: 400, roadWidth: 10, islandWidth: 2, lanesPerRoad: 2,
+          fov: 90, fovSpeedUp: 110, speedUp: 1.2, carLightsFade: 0.4,
+          totalSideLightSticks: 28, lightPairsPerRoadWay: 28,
+          shoulderLinesWidthPercentage: 0.05, brokenLinesWidthPercentage: 0.1,
+          brokenLinesLengthPercentage: 0.5,
+          lightStickWidth: [0.12, 0.5], lightStickHeight: [1.3, 1.7],
+          movingAwaySpeed: [45, 60], movingCloserSpeed: [-80, -110],
+          carLightsLength: [400*0.05, 400*0.15], carLightsRadius: [0.05, 0.14],
+          carWidthPercentage: [0.3, 0.5], carShiftX: [-0.2, 0.2],
+          carFloorSeparation: [0.05, 1],
+          colors: {
+            roadColor:     0x040608, islandColor:   0x060810,
+            background:    0x010204, shoulderLines: 0x0c1018,
+            brokenLines:   0x080c14,
+            leftCars:  [0x991408, 0x770c06, 0xaa160a],
+            rightCars: [0x3c4c58, 0x2c3c48, 0x1c2c38],
+            sticks:    0x0a1220,
+          },
+        });
+        roadApp.loadAssets().then(roadApp.init);
+      } catch(e) { console.warn('road:', e); }
+
+      /* Text trail for "saved" */
+      var trailWrap = document.getElementById('text-trail-wrap');
+      if (trailWrap && typeof THREE !== 'undefined') {
+        try {
+          new TextTrail(trailWrap, {
+            text:        'saved',
+            color:       [0.50, 0.65, 0.82],
+            rgbPersist:   0.970,
+            alphaPersist: 0.960,
+          });
+        } catch(e) { console.warn('texttrail:', e); }
+      }
+
+      /* Loading veil */
+      var veil = document.querySelector('.loading-veil');
+      if (veil) {
+        setTimeout(function(){ veil.classList.add('fade-out'); }, 900);
+        setTimeout(function(){ if(veil.parentNode) veil.parentNode.removeChild(veil); }, 2900);
+      }
+    });
+  </script>
+
+</body>
+</html>

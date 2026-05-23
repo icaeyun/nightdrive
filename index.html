@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>nightdrive</title>
+  <meta name="description" content="A cinematic night drive — coastal road, infinite lights, metropolitan horizon.">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- Loading veil -->
+  <div class="loading-veil"><div class="loading-dot"></div></div>
+
+  <!-- Layer 0 — Infinite Lights road (full screen) -->
+  <div id="road-bg"></div>
+
+  <!-- Layer 10 — FFT Ocean side iframes -->
+  <iframe
+    id="ocean-iframe-left"
+    class="ocean-iframe"
+    src="ocean-view.html?side=left&mode=moonlit"
+    scrolling="no"
+    frameborder="0"
+    allowtransparency="true"
+  ></iframe>
+  <iframe
+    id="ocean-iframe-right"
+    class="ocean-iframe"
+    src="ocean-view.html?side=right&mode=moonlit"
+    scrolling="no"
+    frameborder="0"
+    allowtransparency="true"
+  ></iframe>
+
+  <!-- Layer 24 — Horizon top gradient -->
+  <div class="horizon-overlay"></div>
+
+  <!-- Layer 25 — Text trail for "nightdrive" title (mix-blend-mode:screen, upper 48vh) -->
+  <div id="text-trail-wrap"></div>
+
+  <!-- Layer 27 — Vignette -->
+  <div class="vignette"></div>
+
+  <!-- Layer 30 — UI -->
+  <div class="ui-layer">
+
+    <nav class="nav">
+      <div class="nav__logo">nd</div>
+      <div class="nav__links">
+        <a href="saved.html" class="nav__link">saved</a>
+      </div>
+    </nav>
+
+    <!-- Hero: spacer + subtitle + button in lower half -->
+    <div class="hero">
+      <div class="hero__sub">coastal route &nbsp;—&nbsp; night corridor</div>
+      <div class="hero__actions">
+        <button id="music-btn" class="btn-engine">start engine</button>
+      </div>
+    </div>
+
+    <div class="mode-switcher">
+      <button class="mode-btn active" data-mode="moonlit">Moonlit Coast</button>
+      <button class="mode-btn"        data-mode="metropolis">Metropolis Glow</button>
+      <button class="mode-btn"        data-mode="cyber">Cyber Harbor</button>
+      <button class="mode-btn"        data-mode="midnight">After Midnight</button>
+    </div>
+
+    <div class="bottom-bar">
+      <span>— 120 km/h</span>
+      <span id="mode-label">Moonlit Coast</span>
+      <span>35.2°N · coastal route</span>
+    </div>
+
+  </div>
+
+  <!-- Screen-reader text for title -->
+  <style>.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}</style>
+  <span class="sr-only">nightdrive</span>
+
+  <!-- Scripts — InfiniteLights stack -->
+  <script src="references/infinite-lights-demo/js/three.min.js"></script>
+  <script src="references/infinite-lights-demo/js/postprocessing.min.js"></script>
+  <script src="references/infinite-lights-demo/js/InfiniteLights.js"></script>
+  <script src="references/infinite-lights-demo/js/Distortions.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/texttrail.js"></script>
+  <script src="js/main.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
+  </style>
+</head>
+<body>
+
+<!-- FFT ocean scripts — loaded from the reference folder (same origin) -->
+<script src="references/fft-ocean/js/libs/three.min.js"></script>
+<script src="references/fft-ocean/js/shaders/ScreenSpaceShader.js"></script>
+<script src="references/fft-ocean/js/shaders/FFTOceanShader.js"></script>
+<script src="references/fft-ocean/js/shaders/OceanShader.js"></script>
+<script src="references/fft-ocean/js/effects/MirrorRenderer.js"></script>
+<script src="references/fft-ocean/js/effects/Ocean.js"></script>
+
+<script>
+(function () {
+  /* ── URL params ─────────────────────────────────── */
+  var params  = new URLSearchParams(window.location.search);
+  var side    = params.get('side') || 'left';   // 'left' | 'right'
+  var sideSign = (side === 'left') ? 1 : -1;    // +1 left panel, -1 right panel
+
+  /* ── Renderer ────────────────────────────────────── */
+  var renderer = new THREE.WebGLRenderer({ antialias: false });
+  renderer.setPixelRatio(1); // keep cost low
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setClearColor(0x010204);
+  document.body.appendChild(renderer.domElement);
+
+  var scene = new THREE.Scene();
+
+  /* ── Camera  (side view from coastal road) ────────
+     Camera is at "road height" looking sideways across the water.
+     sideSign  1 = left panel  → camera at +X, looking toward -X
+     sideSign -1 = right panel → camera at -X, looking toward +X
+  ──────────────────────────────────────────────────── */
+  var fov    = 72;
+  var camera = new THREE.PerspectiveCamera(fov, window.innerWidth / window.innerHeight, 0.5, 1000000);
+
+  var camBaseX = sideSign * 130;
+  var camY     = 42;
+  var camZ     = 0;
+
+  camera.position.set(camBaseX, camY, camZ);
+  camera.lookAt(new THREE.Vector3(-sideSign * 350, 8, -180));
+
+  /* ── Directional light (moon) ─────────────────────── */
+  var dirLight = new THREE.DirectionalLight(0xffffff, 1.4);
+  dirLight.position.set(-0.3, 0.35, 1.0);
+  scene.add(dirLight);
+
+  /* ── Ocean ────────────────────────────────────────── */
+  var gsize = 512;
+  var gres  = 128;
+
+  var ocean = new THREE.Ocean(renderer, camera, scene, {
+    INITIAL_SIZE:        240.0,
+    INITIAL_WIND:        [12.0, 8.0],
+    INITIAL_CHOPPINESS:  2.8,
+    CLEAR_COLOR:         [1.0, 1.0, 1.0, 0.0],
+    SUN_DIRECTION:       dirLight.position.clone(),
+    OCEAN_COLOR:         new THREE.Vector3(0.004, 0.016, 0.047),
+    SKY_COLOR:           new THREE.Vector3(3.2, 3.6, 4.0),
+    EXPOSURE:            0.10,
+    GEOMETRY_RESOLUTION: gres,
+    GEOMETRY_SIZE:       gsize,
+    RESOLUTION:          256,
+  });
+
+  /* ── Skybox ───────────────────────────────────────── */
+  var cubeShader = THREE.ShaderLib['cube'];
+  var skyMat = new THREE.ShaderMaterial({
+    fragmentShader: cubeShader.fragmentShader,
+    vertexShader:   cubeShader.vertexShader,
+    uniforms:       THREE.UniformsUtils.clone(cubeShader.uniforms),
+    side:           THREE.BackSide,
+    depthWrite:     false,
+  });
+  var skyBox = new THREE.Mesh(new THREE.BoxGeometry(500000, 500000, 500000), skyMat);
+  scene.add(skyBox);
+
+  /* ── Environment configs ──────────────────────────── */
+  var ENVS = {
+    moonlit: {
+      sky:      'grimmnight',
+      light:    new THREE.Vector3(-0.3,  0.35, 1.0),
+      lightCol: new THREE.Color(0.88, 0.92, 1.0),
+      ocean:    new THREE.Vector3(0.004, 0.016, 0.047),
+      skyCol:   new THREE.Vector3(3.2,  3.6,  4.0),
+      exposure: 0.10,
+      windX:    12.0, windY: 8.0, chop: 2.8,
+    },
+    metropolis: {
+      sky:      'interstellar',
+      light:    new THREE.Vector3(-0.7, 1.0, -0.4),
+      lightCol: new THREE.Color(0.75, 0.68, 1.0),
+      ocean:    new THREE.Vector3(0.014, 0.006, 0.040),
+      skyCol:   new THREE.Vector3(2.8,  2.2,  5.0),
+      exposure: 0.11,
+      windX:    14.0, windY: 10.0, chop: 3.2,
+    },
+    cyber: {
+      sky:      'grimmnight',
+      light:    new THREE.Vector3(0.0, 0.5, 0.8),
+      lightCol: new THREE.Color(0.6, 0.82, 1.0),
+      ocean:    new THREE.Vector3(0.002, 0.014, 0.055),
+      skyCol:   new THREE.Vector3(2.0,  3.4,  5.8),
+      exposure: 0.09,
+      windX:    16.0, windY: 12.0, chop: 3.6,
+    },
+    midnight: {
+      sky:      'grimmnight',
+      light:    new THREE.Vector3(-0.1, 0.2, 0.5),
+      lightCol: new THREE.Color(0.45, 0.55, 0.72),
+      ocean:    new THREE.Vector3(0.002, 0.006, 0.014),
+      skyCol:   new THREE.Vector3(1.2,  1.5,  2.0),
+      exposure: 0.055,
+      windX:    6.0, windY: 4.0, chop: 1.8,
+    },
+  };
+
+  /* ── Load skybox images ───────────────────────────── */
+  var BASE = 'references/fft-ocean/img/';
+  var imgLoader = new THREE.ImageLoader();
+
+  function loadSkybox(name) {
+    var order  = ['west','east','up','down','south','north'];
+    var images = new Array(6);
+    var cubeMap = new THREE.CubeTexture(images);
+    cubeMap.flipY           = false;
+    cubeMap.format          = THREE.RGBFormat;
+    cubeMap.generateMipmaps = false;
+    cubeMap.magFilter       = THREE.LinearFilter;
+    cubeMap.minFilter       = THREE.LinearFilter;
+
+    var loaded = 0;
+    order.forEach(function (face, i) {
+      imgLoader.load(BASE + name + '_' + face + '.jpg', function (img) {
+        cubeMap.images[i] = img;
+        if (++loaded === 6) {
+          cubeMap.needsUpdate = true;
+          skyMat.uniforms['tCube'].value = cubeMap;
+        }
+      });
+    });
+  }
+
+  /* ── Apply an environment config ─────────────────── */
+  function applyEnv(cfg) {
+    dirLight.position.copy(cfg.light);
+    dirLight.color.copy(cfg.lightCol);
+
+    var ou = ocean.materialOcean.uniforms;
+    ou.u_sunDirection.value.copy(cfg.light);
+    ou.u_oceanColor.value.copy(cfg.ocean);
+    ou.u_skyColor.value.copy(cfg.skyCol);
+    ou.u_exposure.value = cfg.exposure;
+    ocean.changed = true;
+  }
+
+  /* Public API for parent page */
+  window.setOceanMode = function (mode) {
+    var cfg = ENVS[mode] || ENVS.moonlit;
+    applyEnv(cfg);
+    loadSkybox(cfg.sky);
+  };
+
+  /* Initial environment */
+  var initMode = params.get('mode') || 'moonlit';
+  applyEnv(ENVS[initMode] || ENVS.moonlit);
+  loadSkybox((ENVS[initMode] || ENVS.moonlit).sky);
+
+  /* ── Animation ────────────────────────────────────── */
+  var lastTime = Date.now();
+  var cameraZ  = 0;
+  var driveSpeed = 48; // units/sec — matches the "fast coastal drive" feeling
+
+  function animate() {
+    requestAnimationFrame(animate);
+
+    var now = Date.now();
+    var dt  = Math.min((now - lastTime) / 1000, 0.05);
+    lastTime = now;
+
+    /* Drive along the Z axis — periodic on the ocean tile */
+    cameraZ -= driveSpeed * dt;
+    if (cameraZ < -(gsize / 2)) cameraZ += gsize;
+
+    camera.position.set(camBaseX, camY, cameraZ);
+    /* LookAt tracks Z so the look direction stays perpendicular to road */
+    camera.lookAt(new THREE.Vector3(-sideSign * 350, 8, cameraZ - 200));
+
+    ocean.deltaTime = dt;
+    ocean.render();
+    ocean.update();
+
+    renderer.render(scene, camera);
+  }
+
+  /* ── Resize ────────────────────────────────────────── */
+  window.addEventListener('resize', function () {
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+  });
+
+  animate();
+
+})();
+</script>
+
+</body>
+</html>
