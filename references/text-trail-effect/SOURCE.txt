@@ -1,0 +1,8 @@
+﻿Reference: Motion Trail Text Effect
+Original GitHub: https://github.com/gnikoloff/text-trail-effect
+Demo: https://tympanus.net/Tutorials/text-trail-effect/
+
+Use note:
+Saved as a visual/code reference for the nightdrive hero title effect.
+Use this only for the main 'nightdrive' title or selected text moments.
+Do not overuse it across the whole website.
