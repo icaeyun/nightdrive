@@ -181,7 +181,7 @@
       body.position.y = bh / 2;
       grp.add(body);
 
-      var fZ    = side > 0 ? -bd / 2 - 0.08 : bd / 2 + 0.08;
+      var fZ    = bd / 2 + 0.08;
       var numW  = Math.floor(6 + t * 26);
       for (var j = 0; j < numW; j++) {
         var jt  = (j * PHI) % 1;
@@ -195,7 +195,7 @@
         grp.add(win);
       }
 
-      var sideX = side > 0 ? bw / 2 + 0.08 : -bw / 2 - 0.08;
+      var sideX = side > 0 ? -bw / 2 - 0.08 : bw / 2 + 0.08;
       var numSW = Math.floor(t * 10);
       for (var sw = 0; sw < numSW; sw++) {
         var swt = (sw * PHI) % 1;
