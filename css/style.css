@@ -7,9 +7,9 @@
 }
 
 :root {
-  --c-bg:      #010204;
-  --c-text:    #b8cedd;
-  --c-dim:     #243548;
+  --c-bg:       #00020c;
+  --c-text:     #b8cedd;
+  --c-dim:      #243548;
   --c-glow-rgb: 10, 25, 52;
 }
 
@@ -24,22 +24,55 @@ html, body {
 }
 
 /* ── LAYER Z-INDEX MAP ─────────────────────────────────
-   0   road bg (InfiniteLights)
-  10   ocean iframes
-  20   speed-streak canvas (optional)
-  24   horizon top fade
-  25   text trail canvas  (mix-blend-mode:screen)
-  27   vignette
-  30   UI
-  90   loading veil
+    1   CityScape Three.js canvas   (full screen, via #city-mount)
+    5   InfiniteLights road canvas  (center corridor, radial mask)
+   22   SpeedLayer 2D canvas        (mix-blend-mode:screen)
+   24   Horizon CSS gradient
+   25   TextTrail canvas            (mix-blend-mode:screen)
+   27   Vignette
+   30   UI
+   90   Loading veil
 ──────────────────────────────────────────────────────── */
 
-/* ── Road ─────────────────────────────────────────────── */
+/* ── City mount (canvas injected by CityScape) ────────── */
+#city-mount {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+#city-mount canvas {
+  position: fixed !important;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* ── Road — center corridor (radial mask) ──────────────── */
 #road-bg {
   position: fixed;
   inset: 0;
-  z-index: 0;
-  background: var(--c-bg);
+  z-index: 5;
+  background: transparent;
+  /* Keep InfiniteLights opaque in the center road channel,
+     transparent on sides so the city shows through */
+  -webkit-mask-image: radial-gradient(
+    ellipse 52% 100% at 50% 60%,
+    black 14%,
+    rgba(0,0,0,0.92) 28%,
+    rgba(0,0,0,0.62) 45%,
+    rgba(0,0,0,0.20) 62%,
+    transparent 78%
+  );
+  mask-image: radial-gradient(
+    ellipse 52% 100% at 50% 60%,
+    black 14%,
+    rgba(0,0,0,0.92) 28%,
+    rgba(0,0,0,0.62) 45%,
+    rgba(0,0,0,0.20) 62%,
+    transparent 78%
+  );
 }
 
 #road-bg canvas {
@@ -48,33 +81,15 @@ html, body {
   display: block;
 }
 
-/* ── Ocean iframes ──────────────────────────────────── */
-.ocean-iframe {
+/* ── Speed 2D overlay ──────────────────────────────────── */
+#speed-layer-mount {
   position: fixed;
-  top: 0;
-  bottom: 0;
-  z-index: 10;
+  inset: 0;
+  z-index: 22;
   pointer-events: none;
-  border: none;
-  background: transparent;
-  /* fade inner edge so ocean blends into the road */
 }
 
-#ocean-iframe-left {
-  left: 0;
-  width: 42%;
-  -webkit-mask-image: linear-gradient(to right, black 45%, rgba(0,0,0,0.0) 100%);
-  mask-image:         linear-gradient(to right, black 45%, rgba(0,0,0,0.0) 100%);
-}
-
-#ocean-iframe-right {
-  right: 0;
-  width: 42%;
-  -webkit-mask-image: linear-gradient(to left, black 45%, rgba(0,0,0,0.0) 100%);
-  mask-image:         linear-gradient(to left, black 45%, rgba(0,0,0,0.0) 100%);
-}
-
-/* ── Horizon gradient (top of scene) ─────────────────── */
+/* ── Horizon gradient ──────────────────────────────────── */
 .horizon-overlay {
   position: fixed;
   inset: 0;
@@ -83,16 +98,13 @@ html, body {
   background: linear-gradient(
     to bottom,
     rgba(var(--c-glow-rgb), 0.45) 0%,
-    rgba(var(--c-glow-rgb), 0.15) 18%,
-    transparent 32%
+    rgba(var(--c-glow-rgb), 0.16) 20%,
+    transparent 36%
   );
   transition: background 1.2s ease;
 }
 
-/* ── Text trail ────────────────────────────────────────
-   Constrained to top ~48 % of viewport so the
-   title glow never overlaps the buttons below.
-──────────────────────────────────────────────────────── */
+/* ── Text trail ────────────────────────────────────────── */
 #text-trail-wrap {
   position: fixed;
   top: 0;
@@ -111,23 +123,22 @@ html, body {
   height: 100% !important;
 }
 
-/* ── Vignette ───────────────────────────────────────── */
+/* ── Vignette ──────────────────────────────────────────── */
 .vignette {
   position: fixed;
   inset: 0;
   z-index: 27;
   pointer-events: none;
-  /* Lighter at centre + sides, stronger at top/bottom corners only */
   background:
     radial-gradient(
-      ellipse 80% 65% at 50% 52%,
+      ellipse 88% 72% at 50% 56%,
       transparent 28%,
-      rgba(1, 2, 6, 0.30) 62%,
-      rgba(1, 2, 6, 0.75) 100%
+      rgba(0, 2, 12, 0.20) 58%,
+      rgba(0, 2, 12, 0.65) 100%
     );
 }
 
-/* ── UI Layer ───────────────────────────────────────── */
+/* ── UI Layer ──────────────────────────────────────────── */
 .ui-layer {
   position: fixed;
   inset: 0;
@@ -137,7 +148,7 @@ html, body {
   flex-direction: column;
 }
 
-/* ── Navigation ─────────────────────────────────────── */
+/* ── Navigation ────────────────────────────────────────── */
 .nav {
   display: flex;
   justify-content: space-between;
@@ -160,7 +171,7 @@ html, body {
   font-size: 0.62rem;
   letter-spacing: 0.28em;
   text-transform: uppercase;
-  color: rgba(80, 130, 180, 0.4);
+  color: rgba(80, 130, 180, 0.40);
   text-decoration: none;
   transition: color 0.35s;
   pointer-events: auto;
@@ -168,14 +179,13 @@ html, body {
 
 .nav__link:hover { color: var(--c-text); }
 
-/* ── Hero  (title ghost + controls in lower half) ────── */
+/* ── Hero ──────────────────────────────────────────────── */
 .hero {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   pointer-events: none;
-  /* Push controls to the lower half so they sit below the text trail */
   justify-content: flex-end;
   padding-bottom: 11vh;
   gap: 1rem;
@@ -190,7 +200,7 @@ html, body {
 
 .hero__actions { pointer-events: auto; }
 
-/* ── Engine / music button ──────────────────────────── */
+/* ── Engine button ─────────────────────────────────────── */
 .btn-engine {
   background: transparent;
   border: 1px solid rgba(35, 75, 120, 0.35);
@@ -223,7 +233,6 @@ html, body {
   box-shadow: 0 0 26px rgba(25, 75, 150, 0.22),
               inset 0 0 18px rgba(15, 55, 120, 0.06);
 }
-
 .btn-engine:hover::after { opacity: 1; }
 
 .btn-engine[data-state="playing"] {
@@ -234,17 +243,12 @@ html, body {
   animation: enginePulse 2.6s ease-in-out infinite;
 }
 
-.btn-engine[data-state="error"] {
-  border-color: rgba(150, 45, 38, 0.38);
-  color: rgba(150, 60, 55, 0.55);
-}
-
 @keyframes enginePulse {
-  0%, 100% { box-shadow: 0 0 22px rgba(35,110,210,0.24), inset 0 0 14px rgba(20,75,155,.06); }
-  50%       { box-shadow: 0 0 46px rgba(55,145,240,0.44), inset 0 0 28px rgba(30,95,185,.14); }
+  0%,100% { box-shadow: 0 0 22px rgba(35,110,210,.24), inset 0 0 14px rgba(20,75,155,.06); }
+  50%     { box-shadow: 0 0 46px rgba(55,145,240,.44), inset 0 0 28px rgba(30,95,185,.14); }
 }
 
-/* ── Mode switcher ──────────────────────────────────── */
+/* ── Mode switcher ─────────────────────────────────────── */
 .mode-switcher {
   display: flex;
   justify-content: center;
@@ -277,7 +281,7 @@ html, body {
   border-bottom-color: rgba(65, 145, 220, 0.78);
 }
 
-/* ── Bottom bar ─────────────────────────────────────── */
+/* ── Bottom bar ────────────────────────────────────────── */
 .bottom-bar {
   display: flex;
   justify-content: space-between;
@@ -290,7 +294,7 @@ html, body {
   pointer-events: none;
 }
 
-/* ── SAVED PAGE ─────────────────────────────────────── */
+/* ── SAVED PAGE ─────────────────────────────────────────── */
 .saved-header {
   padding: 0.4rem 3rem 0.8rem;
   pointer-events: none;
@@ -302,20 +306,6 @@ html, body {
   text-transform: uppercase;
   color: rgba(50, 90, 130, 0.38);
   margin-top: 0.5rem;
-}
-
-#saved-trail-wrap {
-  height: 4.5rem;
-  position: relative;
-  mix-blend-mode: screen;
-  pointer-events: none;
-}
-
-#saved-trail-wrap canvas {
-  position: absolute !important;
-  inset: 0;
-  width: 100% !important;
-  height: 100% !important;
 }
 
 .saved-scroll {
@@ -385,7 +375,7 @@ html, body {
   margin-top: 1.2rem;
 }
 
-/* ── Loading veil ───────────────────────────────────── */
+/* ── Loading veil ──────────────────────────────────────── */
 .loading-veil {
   position: fixed;
   inset: 0;
@@ -411,6 +401,6 @@ html, body {
 }
 
 @keyframes loadPulse {
-  0%, 100% { opacity: 0.12; transform: scale(1); }
-  50%       { opacity: 0.80; transform: scale(2); }
+  0%,100% { opacity: 0.12; transform: scale(1); }
+  50%     { opacity: 0.80; transform: scale(2); }
 }

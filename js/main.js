@@ -1,9 +1,5 @@
 /* main.js — nightdrive app init and mode coordination */
 
-/* ── DRIVE MODES ────────────────────────────────────────
-   Controls: road colours, text-trail colour, CSS horizon
-   glow, perceived intensity. Ocean changes go to iframes.
-─────────────────────────────────────────────────────────*/
 var MODES = {
   moonlit: {
     label:    'Moonlit Coast',
@@ -47,13 +43,14 @@ var MODES = {
   },
 };
 
-/* ── STATE ──────────────────────────────────────────────*/
 var roadApp     = null;
 var textTrail   = null;
 var audioPlayer = null;
+var cityscape   = null;
+var speedLayer  = null;
 var currentMode = 'moonlit';
+var lastTick    = 0;
 
-/* ── ROAD OPTIONS ───────────────────────────────────────*/
 function buildRoadOptions(mode) {
   var m = MODES[mode] || MODES.moonlit;
   return {
@@ -103,28 +100,23 @@ function buildRoadOptions(mode) {
   };
 }
 
-/* ── IFRAME HELPERS ─────────────────────────────────────*/
-function callOceanMode(mode) {
-  ['ocean-iframe-left','ocean-iframe-right'].forEach(function(id) {
-    var el = document.getElementById(id);
-    if (!el) return;
-    try {
-      if (el.contentWindow && el.contentWindow.setOceanMode) {
-        el.contentWindow.setOceanMode(mode);
-      }
-    } catch(e) {}
-  });
+/* ── rAF tick loop ──────────────────────────────────────── */
+function rafTick(now) {
+  requestAnimationFrame(rafTick);
+  var dt = lastTick ? Math.min((now - lastTick) / 1000, 0.05) : 0.016;
+  lastTick = now;
+  if (cityscape)  cityscape.tick(dt);
+  if (speedLayer) speedLayer.tick(dt);
 }
 
-/* ── INIT ───────────────────────────────────────────────*/
+/* ── Init ───────────────────────────────────────────────── */
 function init() {
 
-  /* Road */
+  /* Road (InfiniteLights center corridor) */
   var roadEl = document.getElementById('road-bg');
   if (roadEl) {
     try {
-      var opts = buildRoadOptions(currentMode);
-      roadApp = new App(roadEl, opts);
+      roadApp = new App(roadEl, buildRoadOptions(currentMode));
       roadApp.loadAssets().then(roadApp.init);
     } catch(e) { console.warn('InfiniteLights:', e); }
   }
@@ -134,10 +126,24 @@ function init() {
   if (trailWrap && typeof THREE !== 'undefined') {
     try {
       textTrail = new TextTrail(trailWrap, {
-        text:    'nightdrive',
-        color:   MODES[currentMode].trailCol,
+        text:  'nightdrive',
+        color: MODES[currentMode].trailCol,
       });
     } catch(e) { console.warn('TextTrail:', e); }
+  }
+
+  /* Cityscape */
+  var cityMount = document.getElementById('city-mount');
+  if (cityMount && typeof CityScape !== 'undefined') {
+    try { cityscape = new CityScape(cityMount); }
+    catch(e) { console.warn('CityScape:', e); }
+  }
+
+  /* Speed overlay */
+  var speedMount = document.getElementById('speed-layer-mount');
+  if (speedMount && typeof SpeedLayer !== 'undefined') {
+    try { speedLayer = new SpeedLayer(speedMount); }
+    catch(e) { console.warn('SpeedLayer:', e); }
   }
 
   /* Audio */
@@ -154,52 +160,48 @@ function init() {
     });
   });
 
-  /* Music → speed up road */
+  /* Music events → road + city acceleration */
   document.addEventListener('nightdrive:musicstart', function() {
     if (roadApp) {
       roadApp.fovTarget     = roadApp.options.fovSpeedUp;
       roadApp.speedUpTarget = roadApp.options.speedUp;
     }
+    if (cityscape)  cityscape.setIntensity(1);
+    if (speedLayer) speedLayer.setIntensity(1);
   });
   document.addEventListener('nightdrive:musicstop', function() {
     if (roadApp) {
       roadApp.fovTarget     = roadApp.options.fov;
       roadApp.speedUpTarget = 0;
     }
+    if (cityscape)  cityscape.setIntensity(0);
+    if (speedLayer) speedLayer.setIntensity(0);
   });
 
-  /* Remove loading veil */
+  /* Loading veil */
   var veil = document.querySelector('.loading-veil');
   if (veil) {
     setTimeout(function() { veil.classList.add('fade-out'); }, 900);
     setTimeout(function() { if (veil.parentNode) veil.parentNode.removeChild(veil); }, 2900);
   }
 
-  /* Initial glow variable */
   document.documentElement.style.setProperty('--c-glow-rgb', MODES[currentMode].glowRGB);
+
+  requestAnimationFrame(rafTick);
 }
 
-/* ── SET MODE ───────────────────────────────────────────*/
+/* ── Set mode ───────────────────────────────────────────── */
 function setMode(mode) {
   if (!MODES[mode]) return;
   currentMode = mode;
   var m = MODES[mode];
 
-  /* Ocean iframes */
-  callOceanMode(mode);
-
-  /* Text trail colour */
   if (textTrail) textTrail.setColor(m.trailCol[0], m.trailCol[1], m.trailCol[2]);
-
-  /* Horizon glow */
   document.documentElement.style.setProperty('--c-glow-rgb', m.glowRGB);
-
-  /* Mode label */
   var lbl = document.getElementById('mode-label');
   if (lbl) lbl.textContent = m.label;
 }
 
-/* ── BOOT ───────────────────────────────────────────────*/
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', init);
 } else {

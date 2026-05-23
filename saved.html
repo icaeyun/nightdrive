@@ -11,30 +11,17 @@
   <!-- Loading veil -->
   <div class="loading-veil"><div class="loading-dot"></div></div>
 
-  <!-- Layer 0 — Road (calmer, midnight mode) -->
+  <!-- Layer 1 — CityScape (slow drift, midnight palette) -->
+  <div id="city-mount"></div>
+
+  <!-- Layer 5 — Road (calmer midnight settings) -->
   <div id="road-bg"></div>
 
-  <!-- Layer 10 — FFT Ocean sides (midnight mood) -->
-  <iframe
-    id="ocean-iframe-left"
-    class="ocean-iframe"
-    src="ocean-view.html?side=left&mode=midnight"
-    scrolling="no"
-    frameborder="0"
-  ></iframe>
-  <iframe
-    id="ocean-iframe-right"
-    class="ocean-iframe"
-    src="ocean-view.html?side=right&mode=midnight"
-    scrolling="no"
-    frameborder="0"
-  ></iframe>
-
-  <!-- Atmospheric overlays -->
+  <!-- Layer 24 — Atmospheric overlays -->
   <div class="horizon-overlay"></div>
   <div class="vignette"></div>
 
-  <!-- Text trail for "saved" page title -->
+  <!-- Layer 25 — Text trail -->
   <div id="text-trail-wrap"></div>
 
   <!-- UI -->
@@ -47,13 +34,11 @@
       </div>
     </nav>
 
-    <!-- Page title (text trail renders "saved" into #text-trail-wrap) -->
     <div class="saved-header">
       <span class="sr-only">saved</span>
       <p class="saved-sub">moments from the road</p>
     </div>
 
-    <!-- Scrollable fragments -->
     <div class="saved-scroll">
       <div class="fragments">
 
@@ -132,18 +117,25 @@
     .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}
   </style>
 
-  <!-- Scripts -->
   <script src="references/infinite-lights-demo/js/three.min.js"></script>
   <script src="references/infinite-lights-demo/js/postprocessing.min.js"></script>
   <script src="references/infinite-lights-demo/js/InfiniteLights.js"></script>
   <script src="references/infinite-lights-demo/js/Distortions.js"></script>
   <script src="js/texttrail.js"></script>
+  <script src="js/cityscape.js"></script>
 
   <script>
     document.addEventListener('DOMContentLoaded', function () {
 
-      /* CSS glow for midnight */
       document.documentElement.style.setProperty('--c-glow-rgb', '4, 8, 18');
+
+      /* CityScape — slow drift, no acceleration */
+      var cityMount = document.getElementById('city-mount');
+      var city = null;
+      if (cityMount && typeof CityScape !== 'undefined') {
+        try { city = new CityScape(cityMount); }
+        catch(e) { console.warn('CityScape:', e); }
+      }
 
       /* Road — calmer midnight settings */
       var roadEl = document.getElementById('road-bg');
@@ -162,29 +154,37 @@
           carWidthPercentage: [0.3, 0.5], carShiftX: [-0.2, 0.2],
           carFloorSeparation: [0.05, 1],
           colors: {
-            roadColor:     0x040608, islandColor:   0x060810,
-            background:    0x010204, shoulderLines: 0x0c1018,
-            brokenLines:   0x080c14,
+            roadColor: 0x040608, islandColor: 0x060810,
+            background: 0x010204, shoulderLines: 0x0c1018,
+            brokenLines: 0x080c14,
             leftCars:  [0x991408, 0x770c06, 0xaa160a],
             rightCars: [0x3c4c58, 0x2c3c48, 0x1c2c38],
-            sticks:    0x0a1220,
+            sticks: 0x0a1220,
           },
         });
         roadApp.loadAssets().then(roadApp.init);
       } catch(e) { console.warn('road:', e); }
 
-      /* Text trail for "saved" */
+      /* Text trail */
       var trailWrap = document.getElementById('text-trail-wrap');
       if (trailWrap && typeof THREE !== 'undefined') {
         try {
           new TextTrail(trailWrap, {
-            text:        'saved',
-            color:       [0.50, 0.65, 0.82],
-            rgbPersist:   0.970,
-            alphaPersist: 0.960,
+            text: 'saved', color: [0.50, 0.65, 0.82],
+            rgbPersist: 0.970, alphaPersist: 0.960,
           });
         } catch(e) { console.warn('texttrail:', e); }
       }
+
+      /* City slow scroll + own rAF */
+      var last = 0;
+      function frame(now) {
+        requestAnimationFrame(frame);
+        var dt = last ? Math.min((now - last) / 1000, 0.05) : 0.016;
+        last = now;
+        if (city) city.tick(dt);
+      }
+      requestAnimationFrame(frame);
 
       /* Loading veil */
       var veil = document.querySelector('.loading-veil');

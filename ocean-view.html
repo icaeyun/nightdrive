@@ -9,7 +9,6 @@
 </head>
 <body>
 
-<!-- FFT ocean scripts — loaded from the reference folder (same origin) -->
 <script src="references/fft-ocean/js/libs/three.min.js"></script>
 <script src="references/fft-ocean/js/shaders/ScreenSpaceShader.js"></script>
 <script src="references/fft-ocean/js/shaders/FFTOceanShader.js"></script>
@@ -19,36 +18,59 @@
 
 <script>
 (function () {
-  /* ── URL params ─────────────────────────────────── */
-  var params  = new URLSearchParams(window.location.search);
-  var side    = params.get('side') || 'left';   // 'left' | 'right'
-  var sideSign = (side === 'left') ? 1 : -1;    // +1 left panel, -1 right panel
+  var params   = new URLSearchParams(window.location.search);
+  var side     = params.get('side') || 'center';
+  var initMode = params.get('mode') || 'moonlit';
 
-  /* ── Renderer ────────────────────────────────────── */
+  /* ── Renderer ─────────────────────────────────────── */
   var renderer = new THREE.WebGLRenderer({ antialias: false });
-  renderer.setPixelRatio(1); // keep cost low
+  renderer.setPixelRatio(1);
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setClearColor(0x010204);
   document.body.appendChild(renderer.domElement);
 
   var scene = new THREE.Scene();
 
-  /* ── Camera  (side view from coastal road) ────────
-     Camera is at "road height" looking sideways across the water.
-     sideSign  1 = left panel  → camera at +X, looking toward -X
-     sideSign -1 = right panel → camera at -X, looking toward +X
-  ──────────────────────────────────────────────────── */
-  var fov    = 72;
+  /* ── Camera ───────────────────────────────────────── */
+  var fov    = 68;
   var camera = new THREE.PerspectiveCamera(fov, window.innerWidth / window.innerHeight, 0.5, 1000000);
 
-  var camBaseX = sideSign * 130;
-  var camY     = 42;
-  var camZ     = 0;
+  /* Camera config per side */
+  var camCfg;
+  if (side === 'center') {
+    /* Forward-looking — see the ocean horizon straight ahead */
+    camCfg = {
+      baseX: 0,
+      baseY: 90,
+      lookX: 0,
+      lookY: 18,
+      lookZOffset: -600,
+      driveSpeed: 38,
+    };
+  } else if (side === 'left') {
+    camCfg = {
+      baseX:  180,
+      baseY:  55,
+      lookX: -400,
+      lookY:  10,
+      lookZOffset: -200,
+      driveSpeed: 48,
+    };
+  } else {
+    camCfg = {
+      baseX: -180,
+      baseY:  55,
+      lookX:  400,
+      lookY:  10,
+      lookZOffset: -200,
+      driveSpeed: 48,
+    };
+  }
 
-  camera.position.set(camBaseX, camY, camZ);
-  camera.lookAt(new THREE.Vector3(-sideSign * 350, 8, -180));
+  camera.position.set(camCfg.baseX, camCfg.baseY, 0);
+  camera.lookAt(new THREE.Vector3(camCfg.lookX, camCfg.lookY, camCfg.lookZOffset));
 
-  /* ── Directional light (moon) ─────────────────────── */
+  /* ── Directional light ────────────────────────────── */
   var dirLight = new THREE.DirectionalLight(0xffffff, 1.4);
   dirLight.position.set(-0.3, 0.35, 1.0);
   scene.add(dirLight);
@@ -149,7 +171,7 @@
     });
   }
 
-  /* ── Apply an environment config ─────────────────── */
+  /* ── Apply environment ────────────────────────────── */
   function applyEnv(cfg) {
     dirLight.position.copy(cfg.light);
     dirLight.color.copy(cfg.lightCol);
@@ -162,22 +184,18 @@
     ocean.changed = true;
   }
 
-  /* Public API for parent page */
   window.setOceanMode = function (mode) {
     var cfg = ENVS[mode] || ENVS.moonlit;
     applyEnv(cfg);
     loadSkybox(cfg.sky);
   };
 
-  /* Initial environment */
-  var initMode = params.get('mode') || 'moonlit';
   applyEnv(ENVS[initMode] || ENVS.moonlit);
   loadSkybox((ENVS[initMode] || ENVS.moonlit).sky);
 
   /* ── Animation ────────────────────────────────────── */
   var lastTime = Date.now();
   var cameraZ  = 0;
-  var driveSpeed = 48; // units/sec — matches the "fast coastal drive" feeling
 
   function animate() {
     requestAnimationFrame(animate);
@@ -186,13 +204,11 @@
     var dt  = Math.min((now - lastTime) / 1000, 0.05);
     lastTime = now;
 
-    /* Drive along the Z axis — periodic on the ocean tile */
-    cameraZ -= driveSpeed * dt;
+    cameraZ -= camCfg.driveSpeed * dt;
     if (cameraZ < -(gsize / 2)) cameraZ += gsize;
 
-    camera.position.set(camBaseX, camY, cameraZ);
-    /* LookAt tracks Z so the look direction stays perpendicular to road */
-    camera.lookAt(new THREE.Vector3(-sideSign * 350, 8, cameraZ - 200));
+    camera.position.set(camCfg.baseX, camCfg.baseY, cameraZ);
+    camera.lookAt(new THREE.Vector3(camCfg.lookX, camCfg.lookY, cameraZ + camCfg.lookZOffset));
 
     ocean.deltaTime = dt;
     ocean.render();
@@ -201,7 +217,6 @@
     renderer.render(scene, camera);
   }
 
-  /* ── Resize ────────────────────────────────────────── */
   window.addEventListener('resize', function () {
     renderer.setSize(window.innerWidth, window.innerHeight);
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -209,7 +224,6 @@
   });
 
   animate();
-
 })();
 </script>
 

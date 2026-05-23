@@ -12,31 +12,19 @@
   <!-- Loading veil -->
   <div class="loading-veil"><div class="loading-dot"></div></div>
 
-  <!-- Layer 0 — Infinite Lights road (full screen) -->
+  <!-- Layer 1 — CityScape Three.js canvas (injected by CityScape class) -->
+  <div id="city-mount"></div>
+
+  <!-- Layer 5 — Infinite Lights road (center corridor, radial-masked) -->
   <div id="road-bg"></div>
 
-  <!-- Layer 10 — FFT Ocean side iframes -->
-  <iframe
-    id="ocean-iframe-left"
-    class="ocean-iframe"
-    src="ocean-view.html?side=left&mode=moonlit"
-    scrolling="no"
-    frameborder="0"
-    allowtransparency="true"
-  ></iframe>
-  <iframe
-    id="ocean-iframe-right"
-    class="ocean-iframe"
-    src="ocean-view.html?side=right&mode=moonlit"
-    scrolling="no"
-    frameborder="0"
-    allowtransparency="true"
-  ></iframe>
+  <!-- Layer 22 — Speed effect 2D overlay (injected by SpeedLayer) -->
+  <div id="speed-layer-mount"></div>
 
   <!-- Layer 24 — Horizon top gradient -->
   <div class="horizon-overlay"></div>
 
-  <!-- Layer 25 — Text trail for "nightdrive" title (mix-blend-mode:screen, upper 48vh) -->
+  <!-- Layer 25 — Text trail -->
   <div id="text-trail-wrap"></div>
 
   <!-- Layer 27 — Vignette -->
@@ -52,7 +40,6 @@
       </div>
     </nav>
 
-    <!-- Hero: spacer + subtitle + button in lower half -->
     <div class="hero">
       <div class="hero__sub">coastal route &nbsp;—&nbsp; night corridor</div>
       <div class="hero__actions">
@@ -75,17 +62,19 @@
 
   </div>
 
-  <!-- Screen-reader text for title -->
   <style>.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}</style>
   <span class="sr-only">nightdrive</span>
 
-  <!-- Scripts — InfiniteLights stack -->
+  <!-- InfiniteLights stack (provides global THREE + POSTPROCESSING) -->
   <script src="references/infinite-lights-demo/js/three.min.js"></script>
   <script src="references/infinite-lights-demo/js/postprocessing.min.js"></script>
   <script src="references/infinite-lights-demo/js/InfiniteLights.js"></script>
   <script src="references/infinite-lights-demo/js/Distortions.js"></script>
+  <!-- App scripts -->
   <script src="js/audio.js"></script>
   <script src="js/texttrail.js"></script>
+  <script src="js/cityscape.js"></script>
+  <script src="js/speedeffect.js"></script>
   <script src="js/main.js"></script>
 
 </body>
