@@ -1,0 +1,8 @@
+﻿Reference: FFT Ocean / A trip under the moonlight
+Original GitHub: https://github.com/jbouny/fft-ocean
+Demo: https://jbouny.github.io/fft-ocean/
+
+Use note:
+Saved as a visual/code reference for the nightdrive side-ocean background.
+Use it as inspiration for dark moonlit ocean motion and side water reflections.
+Do not use it as the main full-screen ocean. In the final nightdrive design, the ocean should appear only on the left and right sides, while the center remains the road / Infinite Lights corridor.
