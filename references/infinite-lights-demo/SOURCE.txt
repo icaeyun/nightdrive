@@ -1,0 +1,8 @@
+﻿Reference: Infinite Lights / High-speed Light Trails in Three.js
+Original GitHub: https://github.com/Anemolo/Infinite-Lights
+Demo: https://tympanus.net/Tutorials/InfiniteLights/
+
+Use note:
+Saved as a visual/code reference for the nightdrive website background.
+Do not redistribute the original demo as-is.
+Use it as a base, modify the visuals, and build a new LA night city / ocean drive background.
