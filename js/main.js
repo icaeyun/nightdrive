@@ -48,7 +48,9 @@ var incomingRoadApp = null;
 var textTrail   = null;
 var audioPlayer = null;
 var cityscape   = null;
-var synthCityBg = null;
+var metropolisBg = null;
+var synthCityBg  = null;
+var aquaCityBg   = null;
 var speedLayer  = null;
 var currentMode = 'moonlit';
 var lastTick    = 0;
@@ -293,6 +295,10 @@ function rafTick(now) {
   lastTick = now;
   if (currentMode === 'cyber') {
     if (synthCityBg) synthCityBg.tick(dt);
+  } else if (currentMode === 'metropolis') {
+    if (metropolisBg) metropolisBg.tick(dt);
+  } else if (currentMode === 'midnight') {
+    if (aquaCityBg) aquaCityBg.tick(dt);
   } else {
     if (cityscape) cityscape.tick(dt);
   }
@@ -336,10 +342,22 @@ function init() {
     catch(e) { console.warn('CityScape:', e); }
   }
 
+  /* MetropolisBg (mode 2 — Metropolis Glow) */
+  if (cityMount && typeof MetropolisBg !== 'undefined') {
+    try { metropolisBg = new MetropolisBg(cityMount); }
+    catch(e) { console.warn('MetropolisBg:', e); }
+  }
+
   /* SynthCity background (mode 3 — Cyber Harbor) */
   if (cityMount && typeof SynthCityBg !== 'undefined') {
     try { synthCityBg = new SynthCityBg(cityMount); }
     catch(e) { console.warn('SynthCityBg:', e); }
+  }
+
+  /* AquaCityBg (mode 4 — After Midnight) */
+  if (cityMount && typeof AquaCityBg !== 'undefined') {
+    try { aquaCityBg = new AquaCityBg(cityMount); }
+    catch(e) { console.warn('AquaCityBg:', e); }
   }
 
   /* Speed overlay */
@@ -366,21 +384,19 @@ function init() {
   /* Music events → road + city acceleration */
   document.addEventListener('nightdrive:musicstart', function() {
     setRoadMotion(true);
-    if (currentMode === 'cyber') {
-      if (synthCityBg) synthCityBg.setIntensity(1);
-    } else {
-      if (cityscape) cityscape.setIntensity(1);
-    }
+    if (currentMode === 'cyber'       && synthCityBg)  synthCityBg.setIntensity(1);
+    else if (currentMode === 'metropolis' && metropolisBg) metropolisBg.setIntensity(1);
+    else if (currentMode === 'midnight'   && aquaCityBg)   aquaCityBg.setIntensity(1);
+    else if (cityscape) cityscape.setIntensity(1);
     if (speedLayer) speedLayer.setIntensity(1);
   });
   document.addEventListener('nightdrive:musicstop', function() {
     setRoadMotion(false);
-    if (currentMode === 'cyber') {
-      if (synthCityBg) synthCityBg.setIntensity(0);
-    } else {
-      if (cityscape) cityscape.setIntensity(0);
-    }
-    if (speedLayer) speedLayer.setIntensity(0);
+    if (synthCityBg)  synthCityBg.setIntensity(0);
+    if (metropolisBg) metropolisBg.setIntensity(0);
+    if (aquaCityBg)   aquaCityBg.setIntensity(0);
+    if (cityscape)    cityscape.setIntensity(0);
+    if (speedLayer)   speedLayer.setIntensity(0);
   });
 
   /* Loading veil */
@@ -405,13 +421,28 @@ function setMode(mode) {
   document.documentElement.style.setProperty('--c-glow-rgb', m.glowRGB);
   switchRoadMode(mode);
 
-  /* Swap city background for Mode 3 */
+  /* Swap city backgrounds */
+  var csEl = cityscape && cityscape._ren && cityscape._ren.domElement;
   if (mode === 'cyber') {
-    if (cityscape && cityscape._canvas) cityscape._canvas.style.opacity = '0';
-    if (synthCityBg) synthCityBg.show();
+    if (csEl) csEl.style.opacity = '0';
+    if (metropolisBg) metropolisBg.hide();
+    if (synthCityBg)  synthCityBg.show();
+    if (aquaCityBg)   aquaCityBg.hide();
+  } else if (mode === 'metropolis') {
+    if (csEl) csEl.style.opacity = '0';
+    if (metropolisBg) metropolisBg.show();
+    if (synthCityBg)  synthCityBg.hide();
+    if (aquaCityBg)   aquaCityBg.hide();
+  } else if (mode === 'midnight') {
+    if (csEl) csEl.style.opacity = '0';
+    if (metropolisBg) metropolisBg.hide();
+    if (synthCityBg)  synthCityBg.hide();
+    if (aquaCityBg)   aquaCityBg.show();
   } else {
-    if (cityscape && cityscape._canvas) cityscape._canvas.style.opacity = '1';
-    if (synthCityBg) synthCityBg.hide();
+    if (csEl) csEl.style.opacity = '1';
+    if (metropolisBg) metropolisBg.hide();
+    if (synthCityBg)  synthCityBg.hide();
+    if (aquaCityBg)   aquaCityBg.hide();
   }
 
   var lbl = document.getElementById('mode-label');
