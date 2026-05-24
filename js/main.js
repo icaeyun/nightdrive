@@ -48,6 +48,7 @@ var incomingRoadApp = null;
 var textTrail   = null;
 var audioPlayer = null;
 var cityscape   = null;
+var synthCityBg = null;
 var speedLayer  = null;
 var currentMode = 'moonlit';
 var lastTick    = 0;
@@ -290,7 +291,11 @@ function rafTick(now) {
   requestAnimationFrame(rafTick);
   var dt = lastTick ? Math.min((now - lastTick) / 1000, 0.05) : 0.016;
   lastTick = now;
-  if (cityscape)  cityscape.tick(dt);
+  if (currentMode === 'cyber') {
+    if (synthCityBg) synthCityBg.tick(dt);
+  } else {
+    if (cityscape) cityscape.tick(dt);
+  }
   if (speedLayer) speedLayer.tick(dt);
 }
 
@@ -324,11 +329,17 @@ function init() {
     } catch(e) { console.warn('TextTrail:', e); }
   }
 
-  /* Cityscape */
+  /* Cityscape (modes 1, 2, 4) */
   var cityMount = document.getElementById('city-mount');
   if (cityMount && typeof CityScape !== 'undefined') {
     try { cityscape = new CityScape(cityMount); }
     catch(e) { console.warn('CityScape:', e); }
+  }
+
+  /* SynthCity background (mode 3 — Cyber Harbor) */
+  if (cityMount && typeof SynthCityBg !== 'undefined') {
+    try { synthCityBg = new SynthCityBg(cityMount); }
+    catch(e) { console.warn('SynthCityBg:', e); }
   }
 
   /* Speed overlay */
@@ -355,12 +366,20 @@ function init() {
   /* Music events → road + city acceleration */
   document.addEventListener('nightdrive:musicstart', function() {
     setRoadMotion(true);
-    if (cityscape)  cityscape.setIntensity(1);
+    if (currentMode === 'cyber') {
+      if (synthCityBg) synthCityBg.setIntensity(1);
+    } else {
+      if (cityscape) cityscape.setIntensity(1);
+    }
     if (speedLayer) speedLayer.setIntensity(1);
   });
   document.addEventListener('nightdrive:musicstop', function() {
     setRoadMotion(false);
-    if (cityscape)  cityscape.setIntensity(0);
+    if (currentMode === 'cyber') {
+      if (synthCityBg) synthCityBg.setIntensity(0);
+    } else {
+      if (cityscape) cityscape.setIntensity(0);
+    }
     if (speedLayer) speedLayer.setIntensity(0);
   });
 
@@ -385,6 +404,16 @@ function setMode(mode) {
   if (textTrail) textTrail.setColor(m.trailCol[0], m.trailCol[1], m.trailCol[2]);
   document.documentElement.style.setProperty('--c-glow-rgb', m.glowRGB);
   switchRoadMode(mode);
+
+  /* Swap city background for Mode 3 */
+  if (mode === 'cyber') {
+    if (cityscape && cityscape._canvas) cityscape._canvas.style.opacity = '0';
+    if (synthCityBg) synthCityBg.show();
+  } else {
+    if (cityscape && cityscape._canvas) cityscape._canvas.style.opacity = '1';
+    if (synthCityBg) synthCityBg.hide();
+  }
+
   var lbl = document.getElementById('mode-label');
   if (lbl) lbl.textContent = m.label;
 }

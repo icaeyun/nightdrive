@@ -47,6 +47,7 @@ html, body {
   inset: 0;
   width: 100% !important;
   height: 100% !important;
+  transition: opacity 0.65s ease;
 }
 
 /* ── Road — center corridor (radial mask) ──────────────── */
