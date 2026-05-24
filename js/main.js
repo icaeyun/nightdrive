@@ -153,11 +153,11 @@ var ROAD_PRESETS = {
     carShiftX: [-0.8, 0.8],
     carFloorSeparation: [0, 5],
     colors: {
-      roadColor: 0x080808,
-      islandColor: 0x0a0a0a,
-      background: 0x000000,
-      shoulderLines: 0x131318,
-      brokenLines: 0x131318,
+      roadColor: 0x050716,
+      islandColor: 0x06091a,
+      background: 0x020412,
+      shoulderLines: 0x1b2644,
+      brokenLines: 0x18213a,
       leftCars: [0xD856BF, 0x6750A2, 0xC247AC],
       rightCars: [0x03B3C3, 0x0E5EA5, 0x324555],
       sticks: 0x03B3C3,
@@ -216,7 +216,7 @@ function buildRoadOptions(mode) {
 function setRoadCanvasState(app, active) {
   if (!app || !app.renderer) return;
   var canvas = app.renderer.domElement;
-  canvas.style.opacity = active ? '1' : '0';
+  canvas.style.opacity = active ? (canvas.classList.contains('road-canvas--cyber') ? '0.78' : '1') : '0';
   canvas.style.pointerEvents = active ? 'auto' : 'none';
 }
 
@@ -416,8 +416,10 @@ function setMode(mode) {
   if (!MODES[mode]) return;
   currentMode = mode;
   var m = MODES[mode];
+  var trailWrap = document.getElementById('text-trail-wrap');
 
   if (textTrail) textTrail.setColor(m.trailCol[0], m.trailCol[1], m.trailCol[2]);
+  if (trailWrap) trailWrap.style.opacity = mode === 'cyber' ? '0' : '1';
   document.documentElement.style.setProperty('--c-glow-rgb', m.glowRGB);
   switchRoadMode(mode);
 

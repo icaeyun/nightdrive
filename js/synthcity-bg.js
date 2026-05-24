@@ -18,19 +18,19 @@
      AmbientLight(0x1b2c80, 0.5) / DirectionalLight(0x8b79ff, 0.1)
      toneMappingExposure=1.0 / bloom threshold=0, strength=7        */
 
-  var CAM_Y    = 300;   /* baseline altitude (range: ~60 – 540) */
-  var CAM_Z    = 100;
+  var CAM_Y    = 335;   /* baseline altitude (range: ~290 - 1120) */
+  var CAM_Z    = -40;
   var LOOK_Y   = 45;
-  var LOOK_Z   = -900;
+  var LOOK_Z   = -1040;
   var CAM_FOV  = 78;
   var BLOCK    = 152;
   var ROAD_W   = 24;
 
   /* Cinematic motion parameters */
-  var ALT_AMP  = 240;    /* altitude swing ±240 units → 60 (street) to 540 (high sky) */
-  var ALT_FREQ = 0.010;  /* ~630 s per full cycle ≈ 10 min: 5 min rise, 5 min descent */
+  var ALT_AMP  = 790;    /* asymmetric altitude swing: small dip, very high climb */
+  var ALT_FREQ = 0.095;  /* ~66 s per full cycle: steady climb, high pass, descent */
   var PAN_AMP  = 210;    /* X-drift swing ±210 units  */
-  var PAN_FREQ = 0.011;  /* ~570 s per full cycle      */
+  var PAN_FREQ = 0.025;  /* ~250 s lateral drift cycle */
 
   /* ── Minimal OBJ parser ──────────────────────────────────────── */
   function parseOBJ(text) {
@@ -99,21 +99,21 @@
     this._ren.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     this._ren.setSize(window.innerWidth, window.innerHeight);
     this._ren.toneMapping = THREE.ACESFilmicToneMapping;
-    this._ren.toneMappingExposure = 1.0;
+    this._ren.toneMappingExposure = 1.22;
 
     this._sc = new THREE.Scene();
-    this._sc.fog = new THREE.Fog(0x12122a, 0, 2200);
+    this._sc.fog = new THREE.Fog(0x17174a, 0, 4300);
     this._sc.background = new THREE.Color(0x12122a);
 
     this._cam = new THREE.PerspectiveCamera(
-      CAM_FOV, window.innerWidth / window.innerHeight, 1, 2800
+      CAM_FOV, window.innerWidth / window.innerHeight, 1, 4300
     );
     this._cam.position.set(0, CAM_Y, CAM_Z);
     this._cam.lookAt(new THREE.Vector3(0, LOOK_Y, LOOK_Z));
 
     /* Lights — exact SynthCity night values */
-    this._sc.add(new THREE.AmbientLight(0x1b2c80, 0.5));
-    var sun = new THREE.DirectionalLight(0x8b79ff, 0.1);
+    this._sc.add(new THREE.AmbientLight(0x3447b8, 1.15));
+    var sun = new THREE.DirectionalLight(0xb7a8ff, 0.36);
     sun.position.set(1, 0.5, 0.25);
     this._sc.add(sun);
 
@@ -178,19 +178,20 @@
        flight path through the city. Camera drifts laterally while
        slowly gaining/losing altitude — like a real autopilot route. */
     var drift  = Math.sin(this._time * PAN_FREQ) * PAN_AMP;
-    var alt    = Math.sin(this._time * ALT_FREQ) * ALT_AMP;
+    var altRaw = Math.sin(this._time * ALT_FREQ - 0.72);
+    var alt    = altRaw < 0 ? altRaw * 45 : Math.pow(altRaw, 1.72) * ALT_AMP;
     var camX   = drift * 0.28;
     var camY   = CAM_Y + alt - iv * 12;
     this._cam.position.set(camX, camY, CAM_Z);
     /* When high, look further ahead and steeper down so the city
        fills the frame rather than disappearing below the horizon. */
-    var lookFarZ = LOOK_Z - Math.max(0, alt) * 0.65 - iv * 50;
+    var lookFarZ = LOOK_Z - Math.max(0, alt) * 0.72 - iv * 50;
     this._cam.lookAt(new THREE.Vector3(
       drift,
-      LOOK_Y + alt * 0.42,
+      LOOK_Y + alt * 0.28,
       lookFarZ
     ));
-    this._cam.fov = CAM_FOV + iv * 5 + Math.max(0, alt) * 0.035;
+    this._cam.fov = Math.min(104, CAM_FOV + iv * 5 + Math.max(0, alt) * 0.026);
     this._cam.updateProjectionMatrix();
 
     var speed = 18 + iv * 180;
@@ -202,7 +203,7 @@
       var p = this._pool[i];
       p.grp.position.z += speed * dt;
 
-      if (p.grp.position.z > camZ + 220) {
+      if (p.grp.position.z > camZ + 520) {
         p.grp.position.z -= p.cycleLen;
         /* Re-scatter X on each cycle to break exact repetition */
         if (p.xBase !== undefined) {
@@ -435,12 +436,12 @@
 
     m.gnd = new THREE.MeshPhongMaterial({
       map: t.gnd, emissive: 0x0090ff, emissiveMap: t.gnd_em,
-      emissiveIntensity: 0.20, shininess: 0
+      emissiveIntensity: 0.42, shininess: 0
     });
 
     m.mega = new THREE.MeshPhongMaterial({
       map: t.mega, emissive: 0xffffff, emissiveMap: t.mega_em,
-      emissiveIntensity: 1.5, shininess: 1
+      emissiveIntensity: 2.1, shininess: 1
     });
 
     /* 10 building materials — random HSL emissive hue, SynthCity exact */
@@ -450,7 +451,7 @@
         map: t['b' + i],
         emissive: new THREE.Color('hsl(' + hue + ',100%,95%)'),
         emissiveMap: t['b' + i + 'e'],
-        emissiveIntensity: 1.5,
+        emissiveIntensity: 2.35,
         shininess: 0
       });
     }
@@ -458,7 +459,7 @@
     /* Ad materials */
     function adMat(emTex) {
       return new THREE.MeshPhongMaterial({
-        emissive: 0xffffff, emissiveMap: emTex, emissiveIntensity: 0.1,
+        emissive: 0xffffff, emissiveMap: emTex, emissiveIntensity: 0.22,
         blending: THREE.AdditiveBlending, fog: false,
         side: THREE.DoubleSide, transparent: false
       });
@@ -471,7 +472,7 @@
     /* Flying cars — SynthCity traffic material */
     m.cars = new THREE.MeshPhongMaterial({
       map: t.cars, emissive: 0xffffff, emissiveMap: t.cars_em,
-      emissiveIntensity: 1.2, side: THREE.DoubleSide, shininess: 20
+      emissiveIntensity: 1.65, side: THREE.DoubleSide, shininess: 20
     });
 
     /* Smoke — billboard planes with alpha map */
@@ -497,17 +498,20 @@
   SynthCityBg.prototype._buildGround = function () {
     var sc  = this._sc;
     var gndMat = this._mats.gnd || new THREE.MeshBasicMaterial({ color: 0x020510 });
+    var SHOW_BASE_FLOOR = false;
 
     /* Large ground plane tiled with SynthCity ground texture */
-    var gnd = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000), gndMat);
-    gnd.rotation.x = -Math.PI / 2;
-    gnd.position.set(0, 0, -1200);
-    if (this._texs.gnd) {
-      var rpts = 4000 / BLOCK;
-      this._texs.gnd.repeat.set(rpts, rpts);
-      this._texs.gnd_em.repeat.set(rpts, rpts);
+    if (SHOW_BASE_FLOOR) {
+      var gnd = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000), gndMat);
+      gnd.rotation.x = -Math.PI / 2;
+      gnd.position.set(0, 0, -1200);
+      if (this._texs.gnd) {
+        var rpts = 4000 / BLOCK;
+        this._texs.gnd.repeat.set(rpts, rpts);
+        this._texs.gnd_em.repeat.set(rpts, rpts);
+      }
+      sc.add(gnd);
     }
-    sc.add(gnd);
 
     /* City block grid lines */
     var gpts = [], mpts = [];
@@ -532,8 +536,10 @@
         new THREE.LineBasicMaterial({ color: color, transparent: true, opacity: opacity })
       ));
     }
-    mkLines(gpts, 0x060f24, 0.45);
-    mkLines(mpts, 0x0b1e3e, 0.60);
+    if (SHOW_BASE_FLOOR) {
+      mkLines(gpts, 0x060f24, 0.45);
+      mkLines(mpts, 0x0b1e3e, 0.60);
+    }
 
     /* ── Holographic lane markers (replaces flat plane)
        Thin cyan LineSegments rectangles spaced along the route.
@@ -541,7 +547,8 @@
        They scroll in the main pool like buildings.                  */
     var GATE_W  = 26;   /* gate width — road corridor */
     var GATE_H  = 34;   /* gate height */
-    var GATE_CL = 18 * 130;  /* cycle length: 18 gates × 130 units */
+    var GATE_CL = 28 * 130;  /* cycle length: 28 gates × 130 units */
+    var GATE_COUNT = 28;
     var gateMat = new THREE.LineBasicMaterial({
       color: 0x00d8ff, transparent: true, opacity: 0.45
     });
@@ -550,8 +557,8 @@
       blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false
     });
 
-    for (var gi = 0; gi < 18; gi++) {
-      var gz = (CAM_Z + 100) - gi * 130;
+    for (var gi = 0; gi < GATE_COUNT; gi++) {
+      var gz = (CAM_Z + 1260) - gi * 130;
       var ggrp = new THREE.Group();
 
       /* Rectangular frame (4 line segments) */
@@ -644,33 +651,47 @@
        synchronization visible in the loop.                        */
     var COLS = [
       /* NEW innermost — fills dark center gap */
-      { x:  -36, keys: SMALL_KEYS, n: 14, large: false, phOff: 0.00 },
-      { x:   36, keys: SMALL_KEYS, n: 14, large: false, phOff: 0.50 },
+      { x:  -36, keys: SMALL_KEYS, n: 40, large: false, phOff: 0.00 },
+      { x:   36, keys: SMALL_KEYS, n: 40, large: false, phOff: 0.50 },
       /* Inner */
-      { x:  -80, keys: SMALL_KEYS, n: 16, large: false, phOff: 0.25 },
-      { x:   80, keys: SMALL_KEYS, n: 16, large: false, phOff: 0.75 },
-      { x: -160, keys: SMALL_KEYS, n: 16, large: false, phOff: 0.12 },
-      { x:  160, keys: SMALL_KEYS, n: 16, large: false, phOff: 0.62 },
-      { x: -240, keys: SMALL_KEYS, n: 15, large: false, phOff: 0.37 },
-      { x:  240, keys: SMALL_KEYS, n: 15, large: false, phOff: 0.87 },
+      { x:  -80, keys: SMALL_KEYS, n: 42, large: false, phOff: 0.25 },
+      { x:   80, keys: SMALL_KEYS, n: 42, large: false, phOff: 0.75 },
+      { x: -160, keys: SMALL_KEYS, n: 42, large: false, phOff: 0.12 },
+      { x:  160, keys: SMALL_KEYS, n: 42, large: false, phOff: 0.62 },
+      { x: -240, keys: SMALL_KEYS, n: 40, large: false, phOff: 0.37 },
+      { x:  240, keys: SMALL_KEYS, n: 40, large: false, phOff: 0.87 },
       /* Mid */
-      { x: -340, keys: BIG_KEYS,   n: 14, large: false, phOff: 0.18 },
-      { x:  340, keys: BIG_KEYS,   n: 14, large: false, phOff: 0.68 },
-      { x: -440, keys: BIG_KEYS,   n: 13, large: false, phOff: 0.44 },
-      { x:  440, keys: BIG_KEYS,   n: 13, large: false, phOff: 0.94 },
+      { x: -340, keys: BIG_KEYS,   n: 40, large: false, phOff: 0.18 },
+      { x:  340, keys: BIG_KEYS,   n: 40, large: false, phOff: 0.68 },
+      { x: -440, keys: BIG_KEYS,   n: 38, large: false, phOff: 0.44 },
+      { x:  440, keys: BIG_KEYS,   n: 38, large: false, phOff: 0.94 },
       /* Outer */
-      { x: -540, keys: BIG_KEYS,   n: 13, large: true,  phOff: 0.31 },
-      { x:  540, keys: BIG_KEYS,   n: 13, large: true,  phOff: 0.81 },
-      { x: -640, keys: TOWER_KEYS, n: 12, large: true,  phOff: 0.06 },
-      { x:  640, keys: TOWER_KEYS, n: 12, large: true,  phOff: 0.56 },
-      { x: -740, keys: TOWER_KEYS, n: 11, large: true,  phOff: 0.43 },
-      { x:  740, keys: TOWER_KEYS, n: 11, large: true,  phOff: 0.93 },
+      { x: -540, keys: BIG_KEYS,   n: 38, large: true,  phOff: 0.31 },
+      { x:  540, keys: BIG_KEYS,   n: 38, large: true,  phOff: 0.81 },
+      { x: -640, keys: TOWER_KEYS, n: 36, large: true,  phOff: 0.06 },
+      { x:  640, keys: TOWER_KEYS, n: 36, large: true,  phOff: 0.56 },
+      { x: -740, keys: TOWER_KEYS, n: 34, large: true,  phOff: 0.43 },
+      { x:  740, keys: TOWER_KEYS, n: 34, large: true,  phOff: 0.93 },
+      { x: -860, keys: BIG_KEYS,   n: 34, large: true,  phOff: 0.21 },
+      { x:  860, keys: BIG_KEYS,   n: 34, large: true,  phOff: 0.71 },
+      { x: -980, keys: TOWER_KEYS, n: 32, large: true,  phOff: 0.52 },
+      { x:  980, keys: TOWER_KEYS, n: 32, large: true,  phOff: 0.02 },
+      { x:-1120, keys: TOWER_KEYS, n: 31, large: true,  phOff: 0.34 },
+      { x: 1120, keys: TOWER_KEYS, n: 31, large: true,  phOff: 0.84 },
+      { x:-1280, keys: BIG_KEYS,   n: 30, large: true,  phOff: 0.16 },
+      { x: 1280, keys: BIG_KEYS,   n: 30, large: true,  phOff: 0.66 },
+      { x:-1440, keys: TOWER_KEYS, n: 29, large: true,  phOff: 0.47 },
+      { x: 1440, keys: TOWER_KEYS, n: 29, large: true,  phOff: 0.97 },
+      { x:-1620, keys: BIG_KEYS,   n: 28, large: true,  phOff: 0.29 },
+      { x: 1620, keys: BIG_KEYS,   n: 28, large: true,  phOff: 0.79 },
+      { x:-1820, keys: TOWER_KEYS, n: 27, large: true,  phOff: 0.08 },
+      { x: 1820, keys: TOWER_KEYS, n: 27, large: true,  phOff: 0.58 },
     ];
 
     COLS.forEach(function (col) {
       var isTower  = col.keys === TOWER_KEYS;
       var isBig    = col.keys === BIG_KEYS;
-      var spacing  = BLOCK * 0.88;
+      var spacing  = BLOCK * 0.62;
       var cycleLen = col.n * spacing;
 
       /* Phase offset: stagger each column's starting z so they
@@ -681,11 +702,11 @@
         var geo = getModel(col.keys);
         if (!geo) continue;
 
-        var xJitter = 20;
+        var xJitter = col.large ? 28 : 20;
         var xPos    = col.x + rnd(-xJitter, xJitter);
 
         /* Distribute z with phase offset so columns are out of sync */
-        var z = (CAM_Z + 100) - phaseStart - (i / col.n) * cycleLen + rnd(-12, 12);
+        var z = (CAM_Z + 2800) - phaseStart - (i / col.n) * cycleLen + rnd(-18, 18);
 
         var scale = isTower ? rnd(1.0, 1.7) :
                     (isBig  ? rnd(0.9, 1.6) : rnd(0.75, 1.35));
@@ -771,6 +792,7 @@
       [-260, -2000], [ 300, -1900],
     ];
 
+    megaSlots = [];
     megaSlots.forEach(function (pos) {
       var geo = getModel(MEGA_KEYS);
       if (!geo) return;
