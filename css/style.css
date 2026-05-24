@@ -76,9 +76,16 @@ html, body {
 }
 
 #road-bg canvas {
+  position: absolute !important;
+  inset: 0;
   width: 100% !important;
   height: 100% !important;
   display: block;
+}
+
+.road-canvas {
+  opacity: 0;
+  transition: opacity 0.72s ease;
 }
 
 /* ── Speed 2D overlay ──────────────────────────────────── */
