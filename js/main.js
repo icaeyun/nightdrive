@@ -51,6 +51,7 @@ var cityscape   = null;
 var metropolisBg = null;
 var synthCityBg  = null;
 var aquaCityBg   = null;
+var skySpaceBg   = null;
 var speedLayer  = null;
 var currentMode = 'moonlit';
 var lastTick    = 0;
@@ -302,7 +303,7 @@ function rafTick(now) {
   } else if (currentMode === 'midnight') {
     if (aquaCityBg) aquaCityBg.tick(dt);
   } else {
-    if (cityscape) cityscape.tick(dt);
+    if (skySpaceBg) skySpaceBg.tick(dt);
   }
   if (speedLayer) speedLayer.tick(dt);
 }
@@ -362,6 +363,16 @@ function init() {
     catch(e) { console.warn('AquaCityBg:', e); }
   }
 
+  /* SkySpaceBg (mode 1 — Moonlit Coast, sky-to-space cinematic background) */
+  if (cityMount && typeof SkySpaceBg !== 'undefined') {
+    try { skySpaceBg = new SkySpaceBg(cityMount); }
+    catch(e) { console.warn('SkySpaceBg:', e); }
+  }
+  /* Show skySpaceBg immediately (default mode is moonlit) and hide cityscape */
+  if (skySpaceBg) skySpaceBg.show();
+  var csElInit = cityscape && cityscape._ren && cityscape._ren.domElement;
+  if (csElInit) csElInit.style.opacity = '0';
+
   /* Speed overlay */
   var speedMount = document.getElementById('speed-layer-mount');
   if (speedMount && typeof SpeedLayer !== 'undefined') {
@@ -389,7 +400,7 @@ function init() {
     if (currentMode === 'cyber'       && synthCityBg)  synthCityBg.setIntensity(1);
     else if (currentMode === 'metropolis' && metropolisBg) metropolisBg.setIntensity(1);
     else if (currentMode === 'midnight'   && aquaCityBg)   aquaCityBg.setIntensity(1);
-    else if (cityscape) cityscape.setIntensity(1);
+    else if (skySpaceBg) skySpaceBg.setIntensity(1);
     if (speedLayer) speedLayer.setIntensity(1);
   });
   document.addEventListener('nightdrive:musicstop', function() {
@@ -397,6 +408,7 @@ function init() {
     if (synthCityBg)  synthCityBg.setIntensity(0);
     if (metropolisBg) metropolisBg.setIntensity(0);
     if (aquaCityBg)   aquaCityBg.setIntensity(0);
+    if (skySpaceBg)   skySpaceBg.setIntensity(0);
     if (cityscape)    cityscape.setIntensity(0);
     if (speedLayer)   speedLayer.setIntensity(0);
   });
@@ -434,21 +446,26 @@ function setMode(mode) {
   var csEl = cityscape && cityscape._ren && cityscape._ren.domElement;
   if (mode === 'cyber') {
     if (csEl) csEl.style.opacity = '0';
+    if (skySpaceBg)   skySpaceBg.hide();
     if (metropolisBg) metropolisBg.hide();
     if (synthCityBg)  synthCityBg.show();
     if (aquaCityBg)   aquaCityBg.hide();
   } else if (mode === 'metropolis') {
     if (csEl) csEl.style.opacity = '0';
+    if (skySpaceBg)   skySpaceBg.hide();
     if (metropolisBg) metropolisBg.show();
     if (synthCityBg)  synthCityBg.hide();
     if (aquaCityBg)   aquaCityBg.hide();
   } else if (mode === 'midnight') {
     if (csEl) csEl.style.opacity = '0';
+    if (skySpaceBg)   skySpaceBg.hide();
     if (metropolisBg) metropolisBg.hide();
     if (synthCityBg)  synthCityBg.hide();
     if (aquaCityBg)   aquaCityBg.show();
   } else {
-    if (csEl) csEl.style.opacity = '1';
+    /* moonlit — SkySpaceBg replaces CityScape as the visible background */
+    if (csEl) csEl.style.opacity = '0';
+    if (skySpaceBg)   skySpaceBg.show();
     if (metropolisBg) metropolisBg.hide();
     if (synthCityBg)  synthCityBg.hide();
     if (aquaCityBg)   aquaCityBg.hide();

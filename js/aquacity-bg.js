@@ -5,11 +5,32 @@
 
   var ASSET_BASE = 'assets/caustics/';
   var GLB_PATH = ASSET_BASE + 'bronze_monkey_statue.glb';
+  var POOL_PROP_BASE = 'assets/mode4-poolprops/';
+  var HEAVY_PROP_BASE = 'assets/mode4-poolprops-heavy-backup/';
+  var POOL_PROP_FILES = [
+    'uno_-_rabbid.glb',
+    'mario_rabbit.glb',
+    'iphone_14_pro_max_deep_purple.glb',
+    'bikini_girl.glb',
+    'watermelon_jelly.glb'
+  ];
+  var HEAVY_PROP_FILES = [
+    'back_yard_burgers_-_classic_burger.glb',
+    'jelly.glb',
+    'jelly_birkin_bag.glb',
+    'blonde_woman_black_bikini_blue_eyes.glb'
+  ];
   var BG = 0x3b9ed1;
   var SIZE = 10;
   var POOL_SEGMENT_COUNT = 9;
   var POOL_SEGMENT_SPACING = 7.4;
   var POOL_SEGMENT_PERIOD = POOL_SEGMENT_COUNT * POOL_SEGMENT_SPACING;
+  var PROP_ROUTE_INTRO_TIME = 22;
+  var PROP_ROUTE_REPEATS = 7;
+  var PROP_ROUTE_EMPTY_DISTANCE = 1900;
+  var PROP_ROUTE_Z_A = -42;
+  var PROP_ROUTE_Z_B = -68;
+  var HEAVY_ROUTE_EVERY = 0;
 
   var VORONOI = [
     'vec3 hash(vec3 p){',
@@ -49,11 +70,41 @@
     return new Mat(opts);
   }
 
+  function rnd(a, b) { return a + Math.random() * (b - a); }
+
   function setObjectOpacity(obj, opacity) {
     obj.traverse(function (node) {
       if (!node.isMesh || !node.material) return;
       node.material.transparent = opacity < 0.995;
       node.material.opacity = opacity;
+    });
+  }
+
+  function setMeshListOpacity(meshes, opacity) {
+    meshes.forEach(function (node) {
+      if (!node.material) return;
+      node.material.transparent = opacity < 0.995;
+      node.material.opacity = opacity;
+    });
+  }
+
+  function setPooledPropOpacity(obj, opacity) {
+    var data = obj.userData.poolProp;
+    if (!data || Math.abs((data.lastOpacity || 0) - opacity) < 0.025) return;
+    data.lastOpacity = opacity;
+    setMeshListOpacity(data.meshes, opacity);
+  }
+
+  function disposePropObject(obj, disposeGeometry) {
+    if (!obj || !obj.traverse) return;
+    obj.traverse(function (node) {
+      if (!node.isMesh) return;
+      if (disposeGeometry && node.geometry && node.geometry.dispose) node.geometry.dispose();
+      if (!node.material) return;
+      var mats = Array.isArray(node.material) ? node.material : [node.material];
+      mats.forEach(function (mat) {
+        if (mat && mat.dispose) mat.dispose();
+      });
     });
   }
 
@@ -123,15 +174,15 @@
 
     this._ren = new THREE.WebGLRenderer({
       canvas: this._canvas,
-      antialias: true,
+      antialias: false,
       alpha: false,
+      precision: 'mediump',
       powerPreference: 'high-performance',
     });
-    this._ren.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    this._ren.setPixelRatio(Math.min(window.devicePixelRatio || 1, 0.85));
     this._ren.setSize(window.innerWidth, window.innerHeight);
     this._ren.setClearColor(BG, 1);
-    this._ren.shadowMap.enabled = true;
-    this._ren.shadowMap.type = THREE.PCFSoftShadowMap;
+    this._ren.shadowMap.enabled = false;
     this._ren.toneMapping = THREE.ACESFilmicToneMapping;
     this._ren.toneMappingExposure = 1.05;
 
@@ -148,9 +199,19 @@
     this._time = 0;
     this._target = 0;
     this._iv = 0;
+    this._active = false;
     this._floats = [];
     this._sideObjects = [];
     this._poolSegments = [];
+    this._poolPropCache = {};
+    this._propSlots = [];
+    this._propRouteState = 'intro';
+    this._propRoutePair = null;
+    this._propRouteIndex = 0;
+    this._propRouteRepeats = 0;
+    this._propEmptyRemaining = 0;
+    this._propLoadToken = 0;
+    this._propLoading = false;
 
     this._buildScene();
 
@@ -189,8 +250,8 @@
         mesh.position.set(x, y, localZ);
         mesh.rotation.x = rx || 0;
         mesh.rotation.y = ry || 0;
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
+        mesh.castShadow = false;
+        mesh.receiveShadow = false;
         group.add(mesh);
       }
 
@@ -215,7 +276,7 @@
     spot.position.set(-5, 10, 3);
     spot.angle = Math.PI / 4;
     spot.penumbra = 0.5;
-    spot.castShadow = true;
+    spot.castShadow = false;
     spot.shadow.mapSize.width = 1024;
     spot.shadow.mapSize.height = 1024;
     spot.target.position.set(0, 0, 0);
@@ -245,7 +306,7 @@
         new THREE.BoxGeometry(size, size, size),
         makeMat({ color: color, roughness: 0.1 })
       );
-      mesh.castShadow = mesh.receiveShadow = true;
+      mesh.castShadow = mesh.receiveShadow = false;
       return mesh;
     }
 
@@ -272,20 +333,19 @@
         var zs = [-2, -6.5, -11, -15.5, -20, -24.5];
         var rots = [-0.28, 0.62, 0.34, -0.48, 0.12, 0.88];
         lanes.forEach(function (lane, i) {
-          var clone = model.clone();
+          var clone = model.clone(true);
           clone.traverse(function (obj) {
             if (obj.isMesh) {
-              obj.castShadow = true;
-              obj.receiveShadow = true;
+              obj.castShadow = false;
+              obj.receiveShadow = false;
               obj.material = makeMat({ color: 0xff6347, roughness: 0.1, metalness: 0.0 });
             }
           });
           clone.scale.setScalar(0.92);
           addSideObject(clone, lane, zs[i], i * 0.7, rots[i]);
         });
-        self._glbLoaded = true;
       }, null, function (err) {
-        console.warn('AquaCityBg GLB load failed:', err);
+        console.warn('AquaCityBg monkey GLB load failed:', err);
       });
     }
 
@@ -297,11 +357,207 @@
     this._sc.add(caustic);
   };
 
+  function propSpec(file, heavy) {
+    return {
+      file: file,
+      base: heavy ? HEAVY_PROP_BASE : POOL_PROP_BASE,
+      heavy: !!heavy
+    };
+  }
+
+  AquaCityBg.prototype._loadPoolPropEntry = function (spec, done) {
+    var self = this;
+    var key = spec.base + spec.file;
+    if (this._poolPropCache[key]) {
+      done(this._poolPropCache[key]);
+      return;
+    }
+    if (typeof THREE.GLTFLoader === 'undefined') {
+      console.warn('AquaCityBg pool prop skipped; GLTFLoader missing:', spec.file);
+      done(null);
+      return;
+    }
+
+    Object.keys(this._poolPropCache).forEach(function (cacheKey) {
+      disposePropObject(self._poolPropCache[cacheKey].root, true);
+      delete self._poolPropCache[cacheKey];
+    });
+
+    new THREE.GLTFLoader().load(
+      spec.base + encodeURIComponent(spec.file),
+      function (gltf) {
+        var root = gltf.scene || gltf.scenes[0];
+        if (!root) {
+          console.warn('AquaCityBg pool prop has no scene:', spec.file);
+          done(null);
+          return;
+        }
+
+        root.traverse(function (node) {
+          if (!node.isMesh) return;
+          node.castShadow = false;
+          node.receiveShadow = false;
+          if (node.material) {
+            node.material = node.material.clone();
+            node.material.transparent = true;
+            node.material.opacity = 1;
+          }
+        });
+
+        var box = new THREE.Box3().setFromObject(root);
+        var size = box.getSize(new THREE.Vector3());
+        var center = box.getCenter(new THREE.Vector3());
+        var maxDim = Math.max(size.x, size.y, size.z, 0.001);
+        var normalized = new THREE.Group();
+        root.position.sub(center);
+        normalized.add(root);
+        var entry = {
+          file: spec.file,
+          heavy: spec.heavy,
+          root: normalized,
+          maxDim: maxDim
+        };
+        self._poolPropCache[key] = entry;
+        done(self._poolPropCache[key]);
+      },
+      undefined,
+      function (err) {
+        console.warn('AquaCityBg pool prop GLB skipped:', spec.file, err);
+        done(null);
+      }
+    );
+  };
+
+  AquaCityBg.prototype._loadPoolPropPair = function (files, done) {
+    var out = [];
+    this._loadPoolPropEntry(files[0], function (first) {
+      if (first) out.push(first);
+      done(out);
+    });
+  };
+
+  AquaCityBg.prototype._pickPoolPropPairFiles = function () {
+    var lightCount = POOL_PROP_FILES.length;
+    var lightStart = this._propRouteIndex % lightCount;
+    if (HEAVY_ROUTE_EVERY > 0 &&
+        this._propRouteIndex > 0 &&
+        this._propRouteIndex % HEAVY_ROUTE_EVERY === 0 &&
+        HEAVY_PROP_FILES.length) {
+      return [
+        propSpec(HEAVY_PROP_FILES[(this._propRouteIndex / HEAVY_ROUTE_EVERY - 1) % HEAVY_PROP_FILES.length], true)
+      ];
+    }
+    return [
+      propSpec(POOL_PROP_FILES[lightStart], false)
+    ];
+  };
+
+  AquaCityBg.prototype._startPropRoute = function () {
+    var self = this;
+    if (this._propLoading || this._propRouteState === 'route') return false;
+    this._clearPropRoute();
+    this._propLoading = true;
+    this._propRouteState = 'loading';
+    var token = ++this._propLoadToken;
+    this._loadPoolPropPair(this._pickPoolPropPairFiles(), function (pair) {
+      if (token !== self._propLoadToken) return;
+      self._propLoading = false;
+      if (pair.length < 1) {
+        self._propRouteState = 'empty';
+        self._propEmptyRemaining = PROP_ROUTE_EMPTY_DISTANCE;
+        self._propRouteIndex += 1;
+        return;
+      }
+      self._propRoutePair = pair;
+      self._propRouteRepeats = 0;
+      self._propRouteState = 'route';
+      self._resetPropRoutePass();
+    });
+    return true;
+  };
+
+  AquaCityBg.prototype._clonePoolProp = function (entry, slotIndex, z) {
+    var obj = entry.root.clone(true);
+    var meshes = [];
+    obj.traverse(function (node) {
+      if (!node.isMesh) return;
+      node.castShadow = false;
+      node.receiveShadow = false;
+      if (node.material) {
+        node.material = node.material.clone();
+      }
+      meshes.push(node);
+    });
+
+    var isCharacterProp = entry.file === 'uno_-_rabbid.glb' || entry.file === 'mario_rabbit.glb';
+    var targetSize = entry.file === 'bikini_girl.glb' ? rnd(3.8, 4.8) :
+      isCharacterProp ? rnd(4.8, 6.0) :
+      entry.heavy ? rnd(1.05, 1.55) : rnd(1.55, 2.25);
+    obj.scale.setScalar(targetSize / entry.maxDim);
+    obj.rotation.set(
+      rnd(-0.35, 0.35),
+      rnd(-Math.PI, Math.PI),
+      rnd(-0.22, 0.22)
+    );
+    obj.userData.poolProp = {
+      lane: isCharacterProp ? rnd(-0.95, 0.95) :
+        (slotIndex % 2 === 0 ? rnd(-2.15, -1.45) : rnd(1.45, 2.15)),
+      z: z,
+      spinX: rnd(-0.25, 0.25),
+      spinY: rnd(-0.38, 0.38),
+      spinZ: rnd(-0.18, 0.18),
+      phase: rnd(0, Math.PI * 2),
+      baseY: isCharacterProp ? rnd(1.75, 2.28) : rnd(1.18, 1.82),
+      amp: rnd(0.08, 0.16),
+      meshes: meshes,
+      lastOpacity: -1
+    };
+    setMeshListOpacity(meshes, 0);
+    return obj;
+  };
+
+  AquaCityBg.prototype._clearPropRoute = function (keepPair) {
+    this._propSlots.forEach(function (slot) {
+      if (slot.obj && slot.obj.parent) slot.obj.parent.remove(slot.obj);
+      disposePropObject(slot.obj, false);
+    });
+    this._propSlots = [];
+    if (!keepPair) this._propRoutePair = null;
+  };
+
+  AquaCityBg.prototype._resetPropRoutePass = function () {
+    var self = this;
+    if (!this._propRoutePair || this._propRoutePair.length < 1) return;
+    if (!this._propSlots.length) {
+      this._propRoutePair.forEach(function (entry, i) {
+        var obj = self._clonePoolProp(entry, i, i === 0 ? PROP_ROUTE_Z_A : PROP_ROUTE_Z_B);
+        self._sc.add(obj);
+        self._propSlots.push({ obj: obj });
+      });
+    } else {
+      this._propSlots.forEach(function (slot, i) {
+        var data = slot.obj.userData.poolProp;
+        data.z = i === 0 ? PROP_ROUTE_Z_A : PROP_ROUTE_Z_B;
+        data.lastOpacity = -1;
+        slot.obj.visible = true;
+        setMeshListOpacity(data.meshes, 0);
+      });
+    }
+    this._propRouteRepeats += 1;
+  };
+
   AquaCityBg.prototype.show = function () {
+    this._active = true;
     this._canvas.style.opacity = '1';
   };
 
   AquaCityBg.prototype.hide = function () {
+    this._active = false;
+    this._target = 0;
+    this._propLoading = false;
+    this._propLoadToken += 1;
+    this._clearPropRoute();
+    this._propRouteState = 'intro';
     this._canvas.style.opacity = '0';
   };
 
@@ -312,6 +568,7 @@
   AquaCityBg.prototype.tick = function (dt) {
     this._time += dt;
     this._iv += (this._target - this._iv) * Math.min(dt * 2.5, 1);
+    if (!this._active && this._iv < 0.01) return;
 
     var t = this._time;
     var cx = Math.sin(t * 0.18) * (0.35 + this._iv * 0.22);
@@ -353,6 +610,53 @@
       var fadeOut = Math.max(0, Math.min(1, (12 - s.z) / 8));
       setObjectOpacity(s.obj, Math.min(fadeIn, fadeOut));
     }, this);
+
+    if (!this._active || this._target < 0.05) {
+      if (this._propRouteState === 'route') {
+        this._clearPropRoute();
+        this._propRouteState = 'intro';
+      }
+    } else if (this._propRouteState === 'intro') {
+      if (t >= PROP_ROUTE_INTRO_TIME) {
+        this._startPropRoute();
+      }
+    } else if (this._propRouteState === 'empty') {
+      this._propEmptyRemaining -= sideSpeed * dt;
+      if (this._propEmptyRemaining <= 0) {
+        this._propRouteIndex += 1;
+        this._startPropRoute();
+      }
+    } else if (this._propRouteState === 'route') {
+      var allPassed = true;
+      this._propSlots.forEach(function (slot) {
+        var obj = slot.obj;
+        var data = obj.userData.poolProp;
+        data.z += sideSpeed * dt;
+        var wave = Math.sin(t * (1.55 + this._iv * 4.0) + data.phase);
+        obj.position.set(
+          data.lane + wave * shake * 0.55,
+          data.baseY + Math.sin(t * 1.05 + data.phase) * data.amp,
+          data.z
+        );
+        obj.rotation.x += data.spinX * dt;
+        obj.rotation.y += data.spinY * dt;
+        obj.rotation.z += data.spinZ * dt;
+        var fadeIn = Math.max(0, Math.min(1, (-24 - data.z) / -8));
+        var fadeOut = Math.max(0, Math.min(1, (11 - data.z) / 8));
+        setPooledPropOpacity(obj, Math.min(fadeIn, fadeOut));
+        if (data.z <= 13) allPassed = false;
+      }, this);
+
+      if (allPassed) {
+        if (this._propRouteRepeats < PROP_ROUTE_REPEATS) {
+          this._resetPropRoutePass();
+        } else {
+          this._clearPropRoute();
+          this._propRouteState = 'empty';
+          this._propEmptyRemaining = PROP_ROUTE_EMPTY_DISTANCE;
+        }
+      }
+    }
 
     this._causticMat.uniforms.uTime.value = t * (1 + this._iv * 0.35);
     this._causticMat.uniforms.uOpacity.value = 0.42 + this._iv * 0.16;
