@@ -103,6 +103,25 @@ html, body {
   );
 }
 
+#road-bg.road-bg--rebecca-mode {
+  -webkit-mask-image: radial-gradient(
+    ellipse 34% 74% at 50% 62%,
+    rgba(0,0,0,0.82) 7%,
+    rgba(0,0,0,0.56) 18%,
+    rgba(0,0,0,0.24) 32%,
+    rgba(0,0,0,0.07) 48%,
+    transparent 62%
+  );
+  mask-image: radial-gradient(
+    ellipse 34% 74% at 50% 62%,
+    rgba(0,0,0,0.82) 7%,
+    rgba(0,0,0,0.56) 18%,
+    rgba(0,0,0,0.24) 32%,
+    rgba(0,0,0,0.07) 48%,
+    transparent 62%
+  );
+}
+
 .road-canvas {
   opacity: 0;
   transition: opacity 0.72s ease;

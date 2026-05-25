@@ -216,7 +216,9 @@ function buildRoadOptions(mode) {
 function setRoadCanvasState(app, active) {
   if (!app || !app.renderer) return;
   var canvas = app.renderer.domElement;
-  canvas.style.opacity = active ? (canvas.classList.contains('road-canvas--cyber') ? '0.78' : '1') : '0';
+  canvas.style.opacity = active
+    ? (canvas.classList.contains('road-canvas--cyber') || canvas.classList.contains('road-canvas--metropolis') ? '0.78' : '1')
+    : '0';
   canvas.style.pointerEvents = active ? 'auto' : 'none';
 }
 
@@ -421,7 +423,10 @@ function setMode(mode) {
 
   if (textTrail) textTrail.setColor(m.trailCol[0], m.trailCol[1], m.trailCol[2]);
   if (trailWrap) trailWrap.style.opacity = mode === 'cyber' ? '0' : '1';
-  if (roadEl) roadEl.classList.toggle('road-bg--pool-mode', mode === 'midnight');
+  if (roadEl) {
+    roadEl.classList.toggle('road-bg--pool-mode', mode === 'midnight');
+    roadEl.classList.toggle('road-bg--rebecca-mode', mode === 'metropolis');
+  }
   document.documentElement.style.setProperty('--c-glow-rgb', m.glowRGB);
   switchRoadMode(mode);
 
