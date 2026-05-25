@@ -1,397 +1,363 @@
-/* aquacity-bg.js — Mode 4: green-blue underwater cyber city */
+/* aquacity-bg.js — Mode 4: Faraz Fake Caustics pool scene
+   Reference: https://farazzshaikh.com/demos/demo-2022-fake-caustics
+   Technique: direct scene render + Voronoi3D screen-space caustic overlay
+   Pool tile floor, bronze monkey statue GLB, SpotLight [-5,10,3]               */
+
 (function (global) {
+  'use strict';
 
-  var PHI = 1.6180339887;
-  function rnd(a, b) { return a + Math.random() * (b - a); }
-  function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+  /* ── Scene constants (from reference) ──────────────────────────────────── */
+  var BG_HEX  = 0x0a0e27;   /* reference exact: #0a0e27                      */
+  var FOG_FAR = 22;          /* shorter than ref (22 vs 30) = more depth feel  */
 
-  var AQUA  = [0x00ff88, 0x00ddaa, 0x44ffcc, 0x00ffbb, 0x22eeaa, 0x66ffdd, 0x00cc88];
-  var WIN_A = [0x00ff88, 0x00ddcc, 0x22ffaa, 0x44ddff, 0x00ccaa, 0x33eebb, 0x55ffcc];
+  /* Camera — reference CameraRig targets ~[-5,2,5] looking at [0,1,0]        */
+  var ORBIT_R = 5.0;
+  var CAM_FOV = 50;          /* reference: perspectiveCamera fov=50            */
 
-  var BLOCK    = 140;
-  var CAM_Y    = 58;
-  var CAM_Z    = 80;
-  var LOOK_Y   = 14;
-  var LOOK_Z   = -680;
-  var CAM_FOV  = 80;
-  var ALT_AMP  = 18;
-  var ALT_FREQ = 0.009;
-  var PAN_AMP  = 95;
-  var PAN_FREQ = 0.007;
-  var BUBBLE_N = 600;
+  /* SpotLight — reference: position[-5,10,3], angle=PI/4, penumbra=0.5       */
+  var SPOT_X = -5, SPOT_Y = 10, SPOT_Z = 3;
 
-  var COLS = [
-    { x:  -48, n: 12, phOff: 0.00, sz: 'slim'  },
-    { x:   48, n: 12, phOff: 0.50, sz: 'slim'  },
-    { x: -125, n: 12, phOff: 0.25, sz: 'slim'  },
-    { x:  125, n: 12, phOff: 0.75, sz: 'slim'  },
-    { x: -215, n: 13, phOff: 0.12, sz: 'mid'   },
-    { x:  215, n: 13, phOff: 0.62, sz: 'mid'   },
-    { x: -315, n: 12, phOff: 0.37, sz: 'mid'   },
-    { x:  315, n: 12, phOff: 0.87, sz: 'mid'   },
-    { x: -420, n: 11, phOff: 0.18, sz: 'tower' },
-    { x:  420, n: 11, phOff: 0.68, sz: 'tower' },
-    { x: -525, n: 10, phOff: 0.44, sz: 'tower' },
-    { x:  525, n: 10, phOff: 0.94, sz: 'tower' },
-  ];
+  /* ── GLSL: 3D Voronoi — exact from reference Voronoi.js ─────────────────── */
+  var _V3D = [
+    'vec3 _v3h(vec3 p){',
+    '  return fract(',
+    '    sin(vec3(dot(p,vec3(1.,57.,113.)),dot(p,vec3(57.,113.,1.)),',
+    '            dot(p,vec3(113.,1.,57.))))*43758.5453);',
+    '}',
+    'vec3 voronoi3d(vec3 x){',
+    '  vec3 p=floor(x); vec3 f=fract(x);',
+    '  float id=0.; vec2 res=vec2(100.);',
+    '  for(int k=-1;k<=1;k++)for(int j=-1;j<=1;j++)for(int i=-1;i<=1;i++){',
+    '    vec3 b=vec3(float(i),float(j),float(k));',
+    '    vec3 r=b-f+_v3h(p+b);',
+    '    float d=dot(r,r);',
+    '    float cond=max(sign(res.x-d),0.); float nCond=1.-cond;',
+    '    float cond2=nCond*max(sign(res.y-d),0.); float nCond2=1.-cond2;',
+    '    id=(dot(p+b,vec3(1.,57.,113.))*cond)+(id*nCond);',
+    '    res=vec2(d,res.x)*cond+res*nCond;',
+    '    res.y=cond2*d+nCond2*res.y;',
+    '  }',
+    '  return vec3(sqrt(res),abs(id));',
+    '}'
+  ].join('\n');
 
-  var SZ = {
-    slim:  { wMin: 10, wMax: 20, hMin: 28, hMax:  95, dMin:  8, dMax: 16 },
-    mid:   { wMin: 16, wMax: 34, hMin: 48, hMax: 155, dMin: 12, dMax: 26 },
-    tower: { wMin: 22, wMax: 46, hMin: 85, hMax: 235, dMin: 18, dMax: 36 },
-  };
+  /* ── Caustic overlay material (screen-space, additive) ──────────────────── */
+  function makeCausticOverlay() {
+    var frag = [
+      'uniform float uTime, uOpacity, uAspect;',
+      'varying vec2 vUv;',
+      _V3D,
+      /* getNoise — exact from reference Caustics.jsx getNoise() */
+      'vec3 getNoise(vec3 pos, float t){',
+      '  float scale=1.5;',
+      '  vec3 ns=vec3(scale,.6,scale);',
+      '  float offset=.09;',
+      '  vec3 coords=pos+vec3(t*.5,t,0.);',
+      '  vec3 n1=vec3(',
+      '    voronoi3d((coords+vec3(offset,0.,0.))*ns).x,',
+      '    voronoi3d((coords+vec3(0.,offset,0.))*ns).x,',
+      '    voronoi3d((coords+vec3(0.,0.,offset))*ns).x);',
+      '  n1=pow(n1,vec3(3.));',
+      '  return clamp(n1,0.,1.);',
+      '}',
+      'void main(){',
+      /* Wave-distort UV → water-lens ripple on the caustic itself */
+      '  vec2 uv=vUv;',
+      '  uv.x+=sin(vUv.y*7.0+uTime*1.1)*0.009;',
+      '  uv.y+=cos(vUv.x*5.5+uTime*0.85)*0.007;',
+      /* Map screen UV to 3D position for Voronoi, z-axis = slow drift */
+      '  float sc=5.5;',
+      '  vec3 pos=vec3(uv.x*uAspect*sc, uv.y*sc, uTime*0.08);',
+      '  float t=uTime*.5;',                /* ref: t = uTime * 0.5 */
+      '  vec3 n=getNoise(pos,t);',
+      /* Combine 3 channels — same weights as ref */
+      '  float c=n.x*.52+n.y*.30+n.z*.20;',
+      /* Soft depth fade — stronger toward bottom (pool floor area) */
+      '  float depth=smoothstep(1.0,.2,vUv.y)*0.55+0.45;',
+      /* Blue-white caustic colour (matches pool light feel) */
+      '  vec3 col=vec3(.75,.91,1.0);',
+      '  gl_FragColor=vec4(col*c*depth, c*uOpacity*depth);',
+      '}'
+    ].join('\n');
 
-  function setAttr(geo, arr3) {
-    var buf = arr3 instanceof Float32Array ? arr3 : new Float32Array(arr3);
-    var a   = new THREE.BufferAttribute(buf, 3);
-    if (geo.setAttribute) geo.setAttribute('position', a);
-    else                  geo.addAttribute('position', a);
-    return a;
+    return new THREE.ShaderMaterial({
+      uniforms: {
+        uTime:    { value: 0 },
+        uOpacity: { value: 0.55 },
+        uAspect:  { value: window.innerWidth / window.innerHeight },
+      },
+      vertexShader: [
+        'varying vec2 vUv;',
+        'void main(){',
+        '  vUv=uv;',
+        '  gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);',
+        '}'
+      ].join('\n'),
+      fragmentShader: frag,
+      transparent:  true,
+      blending:     THREE.AdditiveBlending,
+      depthWrite:   false,
+      depthTest:    false,
+    });
   }
 
-  function bMesh(geo, col, op, add) {
-    return new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
-      color: col,
-      transparent: op < 1 || !!add,
-      opacity: op !== undefined ? op : 1,
-      blending: add ? THREE.AdditiveBlending : THREE.NormalBlending,
-      depthWrite: !add,
-    }));
-  }
-
-  function makeBuilding(szKey, t) {
-    var sz  = SZ[szKey];
-    var bw  = rnd(sz.wMin, sz.wMax);
-    var bh  = rnd(sz.hMin, sz.hMax);
-    var bd  = rnd(sz.dMin, sz.dMax);
-    var grp = new THREE.Group();
-
-    var body = bMesh(new THREE.BoxGeometry(bw, bh, bd), 0x000d10, 1);
-    body.position.y = bh / 2;
-    grp.add(body);
-
-    // window glow strips
-    var numW = 2 + Math.floor(t * 3);
-    for (var i = 0; i < numW; i++) {
-      var wy = (i + 1) / (numW + 1) * bh;
-      var ws = bMesh(new THREE.PlaneGeometry(bw * rnd(0.30, 0.72), rnd(0.5, 1.4)), pick(WIN_A), rnd(0.12, 0.28), true);
-      ws.position.set(rnd(-bw * 0.18, bw * 0.18), wy, bd / 2 + 0.05);
-      grp.add(ws);
-    }
-
-    // bio-glow / seaweed accent on lower face
-    if (t > 0.22) {
-      var sg = bMesh(new THREE.PlaneGeometry(bw * rnd(0.28, 0.62), rnd(1.0, 3.2)), pick(AQUA), rnd(0.07, 0.16), true);
-      sg.position.set(rnd(-bw * 0.18, bw * 0.18), bh * rnd(0.05, 0.28), bd / 2 + 0.05);
-      grp.add(sg);
-    }
-
-    // horizontal glow band
-    if (t > 0.38) {
-      var band = bMesh(new THREE.BoxGeometry(bw + 1.2, rnd(0.35, 0.95), 0.2), pick(AQUA), rnd(0.32, 0.60), true);
-      band.position.set(0, bh * rnd(0.38, 0.72), bd / 2 + 0.1);
-      grp.add(band);
-    }
-
-    // glass dome on tower tops
-    if (szKey === 'tower' && t > 0.45) {
-      var dr = rnd(bw * 0.28, bw * 0.52);
-      var dome = bMesh(
-        new THREE.SphereGeometry(dr, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.50),
-        pick(AQUA), rnd(0.04, 0.10), true
+  /* ── Async pool tile texture loader ─────────────────────────────────────── */
+  function loadPoolTiles(onDone) {
+    var loader = new THREE.TextureLoader();
+    var base   = 'assets/caustics/';
+    var jobs   = [
+      { key: 'map',          file: 'tlfmffydy_4K_Albedo.jpg'    },
+      { key: 'normalMap',    file: 'tlfmffydy_4K_Normal.jpg'    },
+      { key: 'aoMap',        file: 'tlfmffydy_4K_AO.jpg'        },
+      { key: 'roughnessMap', file: 'tlfmffydy_4K_Roughness.jpg' },
+    ];
+    var result = {}, left = jobs.length;
+    function finish() { if (--left === 0) onDone(result); }
+    jobs.forEach(function(j) {
+      loader.load(
+        base + j.file,
+        function(tex) {
+          tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+          tex.repeat.set(15 / 4, 15 / 4);
+          result[j.key] = tex;
+          finish();
+        },
+        null,
+        function() { result[j.key] = null; finish(); }
       );
-      dome.position.set(0, bh + dr * 0.05, 0);
-      grp.add(dome);
-    }
-
-    // rooftop beacon
-    if (t > 0.55) {
-      var rh = rnd(2, 6);
-      var rt = bMesh(new THREE.BoxGeometry(0.55, rh, 0.55), pick(AQUA), 0.82, true);
-      rt.position.set(0, bh + rh / 2, 0);
-      grp.add(rt);
-    }
-
-    return { grp: grp, bh: bh };
+    });
   }
 
-  /* ═══════════════════════════════════════════════════════ */
+  /* ── Build the reference scene ───────────────────────────────────────────── */
+  function buildObjects(grp) {
+
+    /* Floor — PlaneGeometry(15,15), pool tile textures                       */
+    var floorGeo = new THREE.PlaneGeometry(15, 15);
+    var uvSrc    = floorGeo.attributes.uv;
+    var uv2Buf   = new THREE.BufferAttribute(new Float32Array(uvSrc.array), uvSrc.itemSize);
+    if (floorGeo.setAttribute) floorGeo.setAttribute('uv2', uv2Buf);
+    else                        floorGeo.addAttribute('uv2', uv2Buf);
+
+    var floorMat = new THREE.MeshStandardMaterial({
+      color: 0x5588dd, roughness: 0.05, metalness: 0.0,
+    });
+    var floorMesh = new THREE.Mesh(floorGeo, floorMat);
+    floorMesh.rotation.x = -Math.PI / 2;
+    floorMesh.receiveShadow = true;
+    grp.add(floorMesh);
+
+    loadPoolTiles(function(textures) {
+      if (textures.map)          floorMat.map          = textures.map;
+      if (textures.normalMap)    floorMat.normalMap     = textures.normalMap;
+      if (textures.aoMap)        floorMat.aoMap         = textures.aoMap;
+      if (textures.roughnessMap) {
+        floorMat.roughnessMap = textures.roughnessMap;
+        floorMat.roughness    = 0.05;
+      }
+      floorMat.needsUpdate = true;
+    });
+
+    /* Cylinder platform — reference: CylinderGeometry(5,5,0.1,32)           */
+    var cyl = new THREE.Mesh(
+      new THREE.CylinderGeometry(5, 5, 0.1, 32),
+      new THREE.MeshStandardMaterial({ color: 0x2255bb, roughness: 0.15, metalness: 0.2 })
+    );
+    cyl.position.y = 0.05;
+    cyl.receiveShadow = cyl.castShadow = true;
+    grp.add(cyl);
+
+    /* Blue box — reference: BoxGeometry(2,2,2) at [-3,1,-3]                 */
+    var boxL = new THREE.Mesh(
+      new THREE.BoxGeometry(2, 2, 2),
+      new THREE.MeshStandardMaterial({ color: 0x0066cc, roughness: 0.25 })
+    );
+    boxL.position.set(-3, 1, -3);
+    boxL.castShadow = boxL.receiveShadow = true;
+    grp.add(boxL);
+
+    /* Red box — reference: BoxGeometry(2,2,2) at [3,1,-3]                   */
+    var boxR = new THREE.Mesh(
+      new THREE.BoxGeometry(2, 2, 2),
+      new THREE.MeshStandardMaterial({ color: 0xcc2200, roughness: 0.25 })
+    );
+    boxR.position.set(3, 1, -3);
+    boxR.castShadow = boxR.receiveShadow = true;
+    grp.add(boxR);
+
+    /* SpotLight — reference: [-5,10,3], intensity≈600, angle=PI/4           */
+    var spot = new THREE.SpotLight(0xffffff, 3.0);
+    spot.position.set(SPOT_X, SPOT_Y, SPOT_Z);
+    spot.angle            = Math.PI / 4;
+    spot.penumbra         = 0.5;
+    spot.castShadow       = true;
+    spot.shadow.mapSize.width  = 1024;
+    spot.shadow.mapSize.height = 1024;
+    spot.target.position.set(0, 0, 0);
+    grp.add(spot);
+    grp.add(spot.target);
+
+    /* Ambient blue — reference: <ambientLight color="blue" intensity={2} /> */
+    grp.add(new THREE.AmbientLight(0x0033cc, 0.9));
+    /* Ambient fill — reference: <ambientLight intensity={0.5} />             */
+    grp.add(new THREE.AmbientLight(0x336688, 0.5));
+
+    /* Bronze monkey statue — reference: bronze_monkey_statue.glb             */
+    if (typeof THREE.GLTFLoader !== 'undefined') {
+      var gltfLoader = new THREE.GLTFLoader();
+      gltfLoader.load(
+        'assets/caustics/bronze_monkey_statue.glb',
+        function(gltf) {
+          var model = gltf.scene;
+          model.position.set(0, 0, 0);
+          model.traverse(function(obj) {
+            if (obj.isMesh) { obj.castShadow = obj.receiveShadow = true; }
+          });
+          grp.add(model);
+        },
+        null,
+        function() {
+          /* Fallback pedestal */
+          var ped = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.4, 0.55, 2.4, 16),
+            new THREE.MeshStandardMaterial({ color: 0xbb8822, roughness: 0.2, metalness: 0.7 })
+          );
+          ped.position.set(0, 1.2, 0);
+          ped.castShadow = ped.receiveShadow = true;
+          grp.add(ped);
+        }
+      );
+    }
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════════ */
   function AquaCityBg(container) {
+    var w = window.innerWidth, h = window.innerHeight;
+
+    /* Canvas — no contrast filter (would crush dark background to black) */
     var canvas = document.createElement('canvas');
     canvas.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;';
     canvas.style.opacity = '0';
     container.appendChild(canvas);
-
     this._canvas = canvas;
 
+    /* Renderer — reference: antialias:true, dpr=1 */
     this._ren = new THREE.WebGLRenderer({
-      canvas: canvas, antialias: false, alpha: false,
+      canvas: canvas, antialias: true, alpha: false,
       powerPreference: 'high-performance',
     });
-    this._ren.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-    this._ren.setSize(window.innerWidth, window.innerHeight);
-    this._ren.setClearColor(0x000d10, 1);
-    this._ren.toneMapping = THREE.ACESFilmicToneMapping;
-    this._ren.toneMappingExposure = 0.9;
+    this._ren.setPixelRatio(1);
+    this._ren.setSize(w, h);
+    this._ren.setClearColor(BG_HEX, 1);
+    this._ren.shadowMap.enabled  = true;
+    this._ren.shadowMap.type     = THREE.PCFSoftShadowMap;
+    this._ren.toneMapping        = THREE.ACESFilmicToneMapping;
+    this._ren.toneMappingExposure = 1.1;
 
+    /* Scene — reference: background="#0a0e27", fog("#0a0e27", 0, 30)        */
     this._sc = new THREE.Scene();
-    this._sc.fog = new THREE.Fog(0x001510, 30, 1100);
+    this._sc.background = new THREE.Color(BG_HEX);
+    this._sc.fog = new THREE.Fog(0x040c1e, 1, FOG_FAR);
 
-    this._cam = new THREE.PerspectiveCamera(CAM_FOV, window.innerWidth / window.innerHeight, 1, 2000);
-    this._cam.position.set(0, CAM_Y, CAM_Z);
-    this._cam.lookAt(new THREE.Vector3(0, LOOK_Y, LOOK_Z));
+    /* Camera — FOV=50 matching reference */
+    this._cam = new THREE.PerspectiveCamera(CAM_FOV, w / h, 0.1, 200);
+    this._cam.position.set(-ORBIT_R, 2.5, ORBIT_R);
+    this._cam.lookAt(0, 1, 0);
 
-    this._iv     = 0;
-    this._target = 0;
-    this._time   = 0;
-    this._pool   = [];
-    this._weeds  = [];
-    this._shafts = [];
-    this._bubbleAttr  = null;
-    this._bubbleSpeeds = null;
+    /* Scene objects */
+    this._objectsGroup = new THREE.Group();
+    this._sc.add(this._objectsGroup);
+    buildObjects(this._objectsGroup);
 
-    this._composer    = null;
+    /* ── Screen-space Voronoi3D caustic overlay ────────────────────────── */
+    this._causticMat = makeCausticOverlay();
+    this._ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    var ndqGeo  = new THREE.PlaneGeometry(2, 2);
+    this._overlayScene = new THREE.Scene();
+    this._overlayScene.add(new THREE.Mesh(ndqGeo, this._causticMat));
+
+    /* EffectComposer — Bloom matching reference intensity=1, threshold=0.7  */
     this._useComposer = false;
     try {
-      if (typeof POSTPROCESSING !== 'undefined') {
-        var bloom = new POSTPROCESSING.BloomEffect({
-          luminanceThreshold: 0.0,
-          luminanceSmoothing: 0.5,
-          resolutionScale: 0.75,
-          intensity: 1.8,
-        });
-        var rPass = new POSTPROCESSING.RenderPass(this._sc, this._cam);
-        var ePass = new POSTPROCESSING.EffectPass(this._cam, bloom);
-        ePass.renderToScreen = true;
-        this._composer = new POSTPROCESSING.EffectComposer(this._ren);
-        this._composer.addPass(rPass);
-        this._composer.addPass(ePass);
-        this._useComposer = true;
-      }
-    } catch (e) {}
+      var P     = POSTPROCESSING;
+      var comp  = new P.EffectComposer(this._ren);
+      var rp    = new P.RenderPass(this._sc, this._cam);
+      var bloom = new P.BloomEffect({ intensity: 1.0, luminanceThreshold: 0.7, luminanceSmoothing: 0.025 });
+      var fxp   = new P.EffectPass(this._cam, bloom);
+      fxp.renderToScreen = true;
+      comp.addPass(rp);
+      comp.addPass(fxp);
+      this._composer    = comp;
+      this._useComposer = true;
+    } catch (e) { console.warn('AquaCityBg bloom:', e); }
 
-    this._sc.add(new THREE.AmbientLight(0x003322, 0.5));
-    var dl = new THREE.DirectionalLight(0x00ffaa, 0.08);
-    dl.position.set(0, 500, 0);
-    this._sc.add(dl);
+    /* State */
+    this._iv      = 0;
+    this._time    = 0;
+    this._orbit   = 0;
+    this._visible = false;
 
-    this._build();
-    window.addEventListener('resize', this._resize.bind(this));
+    var self = this;
+    this._onResize = function () { self._resize(); };
+    window.addEventListener('resize', this._onResize);
   }
 
-  AquaCityBg.prototype._build = function () {
-    this._makeFloor();
-    this._makeCity();
-    this._makeBubbles();
-    this._makeLightShafts();
-    this._makeSeaweed();
-  };
-
-  AquaCityBg.prototype._makeFloor = function () {
-    var sc = this._sc;
-
-    var gnd = bMesh(new THREE.PlaneGeometry(6000, 5000), 0x000a0c, 1);
-    gnd.rotation.x = -Math.PI / 2;
-    gnd.position.set(0, -2, -600);
-    sc.add(gnd);
-
-    // deep water haze planes
-    [
-      [0x003322, 0.24, 6000, 200,  42, -1000],
-      [0x001a10, 0.18, 4000, 100,  22,  -700],
-      [0x002211, 0.14, 6000, 600, 160, -1200],
-    ].forEach(function (g) {
-      var m = bMesh(new THREE.PlaneGeometry(g[2], g[3]), g[0], g[1], true);
-      m.material.side = THREE.DoubleSide;
-      m.position.set(0, g[4], g[5]);
-      sc.add(m);
-    });
-
-    // seafloor grid
-    var pts = [];
-    for (var i = 0; i <= 16; i++) {
-      var x0 = -200 + (i / 16) * 400;
-      pts.push(x0, 0.2, 120,  x0 * 0.02, 0.2, -900);
-    }
-    for (var j = 0; j < 18; j++) {
-      var z  = 100 - j * 55;
-      var sp = Math.max(3, 200 * Math.max(0, (100 - z) / 1000));
-      pts.push(-sp, 0.2, z,  sp, 0.2, z);
-    }
-    var lgeo = new THREE.BufferGeometry();
-    setAttr(lgeo, pts);
-    sc.add(new THREE.LineSegments(lgeo, new THREE.LineBasicMaterial({
-      color: 0x004433, transparent: true, opacity: 0.26,
-    })));
-  };
-
-  AquaCityBg.prototype._makeCity = function () {
-    var sc   = this._sc;
-    var pool = this._pool;
-
-    COLS.forEach(function (col) {
-      var cycleLen = col.n * BLOCK;
-      var startZ   = -(col.phOff * cycleLen);
-      var xJitter  = col.sz === 'slim' ? 8 : (col.sz === 'mid' ? 13 : 20);
-      var xBase    = col.x;
-
-      for (var i = 0; i < col.n; i++) {
-        var t   = (i * PHI) % 1;
-        var z0  = startZ - i * BLOCK + rnd(-BLOCK * 0.20, BLOCK * 0.20);
-        var blt = makeBuilding(col.sz, t);
-        blt.grp.position.set(xBase + (Math.random() * 2 - 1) * xJitter, 0, z0);
-        sc.add(blt.grp);
-        pool.push({ grp: blt.grp, cycleLen: cycleLen, xBase: xBase, xJitter: xJitter });
-      }
-    });
-
-    // distant static skyline
-    for (var s = 0; s < 40; s++) {
-      var t2   = (s * PHI) % 1;
-      var side = s % 2 === 0 ? -1 : 1;
-      var sx   = side * (240 + t2 * 340);
-      var sz2  = -500 - t2 * 600;
-      var bw2  = 14 + t2 * 55;
-      var bh2  = 45 + t2 * 240;
-      var bod  = bMesh(new THREE.BoxGeometry(bw2, bh2, 12), 0x000c10, 1);
-      bod.position.set(sx, bh2 / 2, sz2);
-      sc.add(bod);
-    }
-  };
-
-  AquaCityBg.prototype._makeBubbles = function () {
-    var N   = BUBBLE_N;
-    var pts = new Float32Array(N * 3);
-    var spd = new Float32Array(N);
-    for (var i = 0; i < N; i++) {
-      pts[i * 3]     = rnd(-420, 420);
-      pts[i * 3 + 1] = rnd(-10, 210);
-      pts[i * 3 + 2] = rnd(-950, 110);
-      spd[i]         = rnd(2.5, 13);
-    }
-    var geo  = new THREE.BufferGeometry();
-    var attr = setAttr(geo, pts);
-    this._bubbleAttr   = attr;
-    this._bubbleSpeeds = spd;
-    this._sc.add(new THREE.Points(geo, new THREE.PointsMaterial({
-      color: 0x44ffcc, size: 1.2, sizeAttenuation: true,
-      transparent: true, opacity: 0.34,
-      blending: THREE.AdditiveBlending, depthWrite: false,
-    })));
-  };
-
-  AquaCityBg.prototype._makeLightShafts = function () {
-    var sc   = this._sc;
-    var defs = [
-      { x:  60, z:  -220, h: 300, w: 18, col: 0x00cc88, op: 0.042 },
-      { x: -85, z:  -420, h: 350, w: 14, col: 0x00aa66, op: 0.032 },
-      { x: 145, z:  -620, h: 280, w: 20, col: 0x00dd99, op: 0.048 },
-      { x: -55, z:  -820, h: 400, w: 16, col: 0x00bb77, op: 0.038 },
-      { x: 200, z: -1020, h: 320, w: 22, col: 0x00cc88, op: 0.030 },
-    ];
-    for (var i = 0; i < defs.length; i++) {
-      var d = defs[i];
-      var m = new THREE.Mesh(
-        new THREE.PlaneGeometry(d.w, d.h),
-        new THREE.MeshBasicMaterial({
-          color: d.col, transparent: true, opacity: d.op,
-          blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
-        })
-      );
-      m.rotation.x = -0.12;
-      m.position.set(d.x, d.h / 2 + 20, d.z);
-      sc.add(m);
-      this._shafts.push({ mesh: m, base: d.op, phase: Math.random() * Math.PI * 2 });
-    }
-  };
-
-  AquaCityBg.prototype._makeSeaweed = function () {
-    var sc = this._sc;
-    for (var i = 0; i < 32; i++) {
-      var t    = (i * PHI) % 1;
-      var side = i % 2 === 0 ? -1 : 1;
-      var x    = side * (18 + t * 115);
-      var z    = -90 - t * 580;
-      var h    = rnd(8, 28);
-      var w    = bMesh(
-        new THREE.PlaneGeometry(rnd(1.4, 3.8), h),
-        pick(AQUA), rnd(0.11, 0.26), true
-      );
-      w.material.side = THREE.DoubleSide;
-      w.position.set(x, h / 2, z);
-      sc.add(w);
-      this._weeds.push({ mesh: w, ox: x, phase: t * Math.PI * 2, spd: rnd(0.55, 1.45) });
-    }
-  };
-
-  AquaCityBg.prototype.show = function () { this._canvas.style.opacity = '1'; };
-  AquaCityBg.prototype.hide = function () { this._canvas.style.opacity = '0'; };
-
-  AquaCityBg.prototype.setIntensity = function (v) {
-    this._target = Math.max(0, Math.min(1, v));
-  };
-
+  /* ── Tick ─────────────────────────────────────────────────────────────── */
   AquaCityBg.prototype.tick = function (dt) {
-    this._time += dt;
-    var iv = this._iv;
-    this._iv += (this._target - iv) * Math.min(dt * (this._target > iv ? 2.5 : 0.85), 1);
-    iv = this._iv;
+    if (!this._visible) return;
 
-    var speed = 12 + iv * 145;
-    var camZ  = this._cam.position.z;
-    var t     = this._time;
+    this._time  += dt;
+    /* Very slow orbit — full circle ≈ 2.5 min, gentle vertical bob         */
+    this._orbit += dt * 0.04;
+    var cx = ORBIT_R * Math.cos(this._orbit);
+    var cz = ORBIT_R * Math.sin(this._orbit);
+    var cy = 2.5 + Math.sin(this._orbit * 0.25) * 0.5;
+    this._cam.position.set(cx, cy, cz);
+    this._cam.lookAt(0, 1, 0);
 
-    var drift = Math.sin(t * PAN_FREQ) * PAN_AMP;
-    var alt   = Math.sin(t * ALT_FREQ) * ALT_AMP;
-    this._cam.position.set(drift * 0.20, CAM_Y + alt - iv * 8, CAM_Z);
-    this._cam.lookAt(new THREE.Vector3(drift * 0.38, LOOK_Y + alt * 0.24, LOOK_Z - iv * 38));
-    this._cam.fov = CAM_FOV + iv * 8;
-    this._cam.updateProjectionMatrix();
+    /* Update caustic overlay uniforms */
+    this._causticMat.uniforms.uTime.value   = this._time;
+    this._causticMat.uniforms.uAspect.value = this._ren.domElement.width / this._ren.domElement.height;
 
-    // scroll city
-    this._pool.forEach(function (p) {
-      p.grp.position.z += speed * dt;
-      if (p.grp.position.z > camZ + 200) {
-        p.grp.position.z -= p.cycleLen;
-        p.grp.position.x = p.xBase + (Math.random() * 2 - 1) * p.xJitter;
-      }
-    });
-
-    // bubbles rise
-    var arr = this._bubbleAttr.array;
-    var spd = this._bubbleSpeeds;
-    for (var i = 0; i < BUBBLE_N; i++) {
-      arr[i * 3 + 1] += spd[i] * dt;
-      if (arr[i * 3 + 1] > 260) {
-        arr[i * 3 + 1] = -12;
-        arr[i * 3]     = rnd(-420, 420);
-        arr[i * 3 + 2] = rnd(-950, 110);
-      }
+    /* ── Render: scene via composer (bloom) ────────────────────────────── */
+    if (this._useComposer) {
+      this._composer.render(dt);
+    } else {
+      this._ren.render(this._sc, this._cam);
     }
-    this._bubbleAttr.needsUpdate = true;
 
-    // seaweed sway
-    this._weeds.forEach(function (w) {
-      w.mesh.position.x = w.ox + Math.sin(t * w.spd + w.phase) * 2.4;
-      w.mesh.rotation.z = Math.sin(t * w.spd * 0.7 + w.phase) * 0.14;
-    });
-
-    // light shaft pulse
-    this._shafts.forEach(function (s) {
-      s.mesh.material.opacity = s.base * (0.55 + 0.45 * Math.sin(t * 0.38 + s.phase));
-    });
-
-    if (this._useComposer) this._composer.render(dt);
-    else this._ren.render(this._sc, this._cam);
+    /* ── Overlay: Voronoi3D caustic quad on top (additive) ─────────────── */
+    this._ren.autoClear = false;
+    this._ren.render(this._overlayScene, this._ortho);
+    this._ren.autoClear = true;
   };
 
+  /* ── Show / hide / intensity ──────────────────────────────────────────── */
+  AquaCityBg.prototype.show = function () {
+    this._canvas.style.opacity = '1';
+    this._visible = true;
+  };
+
+  AquaCityBg.prototype.hide = function () {
+    this._canvas.style.opacity = '0';
+    this._visible = false;
+  };
+
+  AquaCityBg.prototype.setIntensity = function (iv) {
+    this._iv = iv;
+    /* Slightly faster time when engine running */
+    this._causticMat.uniforms.uOpacity.value = 0.55 + iv * 0.15;
+  };
+
+  /* ── Resize ───────────────────────────────────────────────────────────── */
   AquaCityBg.prototype._resize = function () {
-    this._ren.setSize(window.innerWidth, window.innerHeight);
-    this._cam.aspect = window.innerWidth / window.innerHeight;
+    var w = window.innerWidth, h = window.innerHeight;
+    this._cam.aspect = w / h;
     this._cam.updateProjectionMatrix();
-    if (this._useComposer) this._composer.setSize(window.innerWidth, window.innerHeight);
+    this._ren.setSize(w, h);
+    this._causticMat.uniforms.uAspect.value = w / h;
+    if (this._composer) this._composer.setSize(w, h);
   };
 
   global.AquaCityBg = AquaCityBg;
 
-}(window));
+})(window);
