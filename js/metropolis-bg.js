@@ -142,8 +142,8 @@
     var SL_FREQ = Math.PI * 2 / 18;
     var RC_FREQ = Math.PI * 2 / 2.2;
     var RC_AMP  = 1.2;
-    var camY = 14.0
-      + 2.1 * Math.sin(this._time * SL_FREQ) + 0.7
+    var camY = 11.5
+      + 2.1 * Math.sin(this._time * SL_FREQ) + 0.6
       + Math.sin(this._time * RC_FREQ) * RC_AMP;
     var velY = 2.1 * SL_FREQ * Math.cos(this._time * SL_FREQ)
              + RC_AMP * RC_FREQ * Math.cos(this._time * RC_FREQ);
