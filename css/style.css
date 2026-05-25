@@ -84,6 +84,25 @@ html, body {
   display: block;
 }
 
+#road-bg.road-bg--pool-mode {
+  -webkit-mask-image: radial-gradient(
+    ellipse 38% 80% at 50% 62%,
+    rgba(0,0,0,0.92) 8%,
+    rgba(0,0,0,0.70) 20%,
+    rgba(0,0,0,0.32) 36%,
+    rgba(0,0,0,0.08) 52%,
+    transparent 66%
+  );
+  mask-image: radial-gradient(
+    ellipse 38% 80% at 50% 62%,
+    rgba(0,0,0,0.92) 8%,
+    rgba(0,0,0,0.70) 20%,
+    rgba(0,0,0,0.32) 36%,
+    rgba(0,0,0,0.08) 52%,
+    transparent 66%
+  );
+}
+
 .road-canvas {
   opacity: 0;
   transition: opacity 0.72s ease;
