@@ -94,7 +94,7 @@ var ROAD_PRESETS = {
     },
   },
   metropolis: {
-    distortion: function() { return LongRaceDistortion; },
+    distortion: function() { return deepDistortion; },
     length: 400,
     roadWidth: 10,
     islandWidth: 5,
@@ -164,7 +164,7 @@ var ROAD_PRESETS = {
     },
   },
   midnight: {
-    distortion: function() { return deepDistortion; },
+    distortion: function() { return LongRaceDistortion; },
     length: 400,
     roadWidth: 9,
     islandWidth: 2,
@@ -190,7 +190,7 @@ var ROAD_PRESETS = {
     colors: {
       roadColor: 0x080808,
       islandColor: 0x0a0a0a,
-      background: 0x000000,
+      background: 0x2a8fc2,
       shoulderLines: 0x131318,
       brokenLines: 0x131318,
       leftCars: [0xE2173C, 0x841010, 0xF23D3D],
@@ -417,9 +417,11 @@ function setMode(mode) {
   currentMode = mode;
   var m = MODES[mode];
   var trailWrap = document.getElementById('text-trail-wrap');
+  var roadEl = document.getElementById('road-bg');
 
   if (textTrail) textTrail.setColor(m.trailCol[0], m.trailCol[1], m.trailCol[2]);
   if (trailWrap) trailWrap.style.opacity = mode === 'cyber' ? '0' : '1';
+  if (roadEl) roadEl.classList.toggle('road-bg--pool-mode', mode === 'midnight');
   document.documentElement.style.setProperty('--c-glow-rgb', m.glowRGB);
   switchRoadMode(mode);
 

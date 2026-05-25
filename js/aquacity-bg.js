@@ -1,363 +1,372 @@
-/* aquacity-bg.js — Mode 4: Faraz Fake Caustics pool scene
-   Reference: https://farazzshaikh.com/demos/demo-2022-fake-caustics
-   Technique: direct scene render + Voronoi3D screen-space caustic overlay
-   Pool tile floor, bronze monkey statue GLB, SpotLight [-5,10,3]               */
+/* aquacity-bg.js - Mode 4: Faraz fake caustics scene, Mode 3-style structure. */
 
 (function (global) {
   'use strict';
 
-  /* ── Scene constants (from reference) ──────────────────────────────────── */
-  var BG_HEX  = 0x0a0e27;   /* reference exact: #0a0e27                      */
-  var FOG_FAR = 22;          /* shorter than ref (22 vs 30) = more depth feel  */
+  var ASSET_BASE = 'assets/caustics/';
+  var GLB_PATH = ASSET_BASE + 'bronze_monkey_statue.glb';
+  var BG = 0x3b9ed1;
+  var SIZE = 10;
+  var POOL_SEGMENT_COUNT = 9;
+  var POOL_SEGMENT_SPACING = 7.4;
+  var POOL_SEGMENT_PERIOD = POOL_SEGMENT_COUNT * POOL_SEGMENT_SPACING;
 
-  /* Camera — reference CameraRig targets ~[-5,2,5] looking at [0,1,0]        */
-  var ORBIT_R = 5.0;
-  var CAM_FOV = 50;          /* reference: perspectiveCamera fov=50            */
-
-  /* SpotLight — reference: position[-5,10,3], angle=PI/4, penumbra=0.5       */
-  var SPOT_X = -5, SPOT_Y = 10, SPOT_Z = 3;
-
-  /* ── GLSL: 3D Voronoi — exact from reference Voronoi.js ─────────────────── */
-  var _V3D = [
-    'vec3 _v3h(vec3 p){',
-    '  return fract(',
-    '    sin(vec3(dot(p,vec3(1.,57.,113.)),dot(p,vec3(57.,113.,1.)),',
-    '            dot(p,vec3(113.,1.,57.))))*43758.5453);',
+  var VORONOI = [
+    'vec3 hash(vec3 p){',
+    '  return fract(sin(vec3(',
+    '    dot(p,vec3(1.0,57.0,113.0)),',
+    '    dot(p,vec3(57.0,113.0,1.0)),',
+    '    dot(p,vec3(113.0,1.0,57.0))',
+    '  ))*43758.5453);',
     '}',
     'vec3 voronoi3d(vec3 x){',
-    '  vec3 p=floor(x); vec3 f=fract(x);',
-    '  float id=0.; vec2 res=vec2(100.);',
-    '  for(int k=-1;k<=1;k++)for(int j=-1;j<=1;j++)for(int i=-1;i<=1;i++){',
-    '    vec3 b=vec3(float(i),float(j),float(k));',
-    '    vec3 r=b-f+_v3h(p+b);',
-    '    float d=dot(r,r);',
-    '    float cond=max(sign(res.x-d),0.); float nCond=1.-cond;',
-    '    float cond2=nCond*max(sign(res.y-d),0.); float nCond2=1.-cond2;',
-    '    id=(dot(p+b,vec3(1.,57.,113.))*cond)+(id*nCond);',
-    '    res=vec2(d,res.x)*cond+res*nCond;',
-    '    res.y=cond2*d+nCond2*res.y;',
+    '  vec3 p=floor(x);',
+    '  vec3 f=fract(x);',
+    '  float id=0.0;',
+    '  vec2 res=vec2(100.0);',
+    '  for(int k=-1;k<=1;k++){',
+    '    for(int j=-1;j<=1;j++){',
+    '      for(int i=-1;i<=1;i++){',
+    '        vec3 b=vec3(float(i),float(j),float(k));',
+    '        vec3 r=b-f+hash(p+b);',
+    '        float d=dot(r,r);',
+    '        float cond=max(sign(res.x-d),0.0);',
+    '        float nCond=1.0-cond;',
+    '        float cond2=nCond*max(sign(res.y-d),0.0);',
+    '        float nCond2=1.0-cond2;',
+    '        id=(dot(p+b,vec3(1.0,57.0,113.0))*cond)+(id*nCond);',
+    '        res=vec2(d,res.x)*cond+res*nCond;',
+    '        res.y=cond2*d+nCond2*res.y;',
+    '      }',
+    '    }',
     '  }',
     '  return vec3(sqrt(res),abs(id));',
     '}'
   ].join('\n');
 
-  /* ── Caustic overlay material (screen-space, additive) ──────────────────── */
-  function makeCausticOverlay() {
-    var frag = [
-      'uniform float uTime, uOpacity, uAspect;',
-      'varying vec2 vUv;',
-      _V3D,
-      /* getNoise — exact from reference Caustics.jsx getNoise() */
-      'vec3 getNoise(vec3 pos, float t){',
-      '  float scale=1.5;',
-      '  vec3 ns=vec3(scale,.6,scale);',
-      '  float offset=.09;',
-      '  vec3 coords=pos+vec3(t*.5,t,0.);',
-      '  vec3 n1=vec3(',
-      '    voronoi3d((coords+vec3(offset,0.,0.))*ns).x,',
-      '    voronoi3d((coords+vec3(0.,offset,0.))*ns).x,',
-      '    voronoi3d((coords+vec3(0.,0.,offset))*ns).x);',
-      '  n1=pow(n1,vec3(3.));',
-      '  return clamp(n1,0.,1.);',
-      '}',
-      'void main(){',
-      /* Wave-distort UV → water-lens ripple on the caustic itself */
-      '  vec2 uv=vUv;',
-      '  uv.x+=sin(vUv.y*7.0+uTime*1.1)*0.009;',
-      '  uv.y+=cos(vUv.x*5.5+uTime*0.85)*0.007;',
-      /* Map screen UV to 3D position for Voronoi, z-axis = slow drift */
-      '  float sc=5.5;',
-      '  vec3 pos=vec3(uv.x*uAspect*sc, uv.y*sc, uTime*0.08);',
-      '  float t=uTime*.5;',                /* ref: t = uTime * 0.5 */
-      '  vec3 n=getNoise(pos,t);',
-      /* Combine 3 channels — same weights as ref */
-      '  float c=n.x*.52+n.y*.30+n.z*.20;',
-      /* Soft depth fade — stronger toward bottom (pool floor area) */
-      '  float depth=smoothstep(1.0,.2,vUv.y)*0.55+0.45;',
-      /* Blue-white caustic colour (matches pool light feel) */
-      '  vec3 col=vec3(.75,.91,1.0);',
-      '  gl_FragColor=vec4(col*c*depth, c*uOpacity*depth);',
-      '}'
-    ].join('\n');
+  function makeMat(opts) {
+    var Mat = THREE.MeshPhysicalMaterial || THREE.MeshStandardMaterial;
+    return new Mat(opts);
+  }
 
+  function setObjectOpacity(obj, opacity) {
+    obj.traverse(function (node) {
+      if (!node.isMesh || !node.material) return;
+      node.material.transparent = opacity < 0.995;
+      node.material.opacity = opacity;
+    });
+  }
+
+  function addUv2(geo) {
+    if (!geo || !geo.attributes || !geo.attributes.uv) return;
+    var uv = geo.attributes.uv;
+    var uv2 = new THREE.BufferAttribute(new Float32Array(uv.array), 2);
+    if (geo.setAttribute) geo.setAttribute('uv2', uv2);
+    else geo.addAttribute('uv2', uv2);
+  }
+
+  function makeCausticMaterial() {
     return new THREE.ShaderMaterial({
       uniforms: {
-        uTime:    { value: 0 },
-        uOpacity: { value: 0.55 },
-        uAspect:  { value: window.innerWidth / window.innerHeight },
+        uTime: { value: 0 },
+        uOpacity: { value: 0.42 },
       },
       vertexShader: [
         'varying vec2 vUv;',
         'void main(){',
         '  vUv=uv;',
-        '  gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);',
+        '  gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);',
         '}'
       ].join('\n'),
-      fragmentShader: frag,
-      transparent:  true,
-      blending:     THREE.AdditiveBlending,
-      depthWrite:   false,
-      depthTest:    false,
+      fragmentShader: [
+        'uniform float uTime;',
+        'uniform float uOpacity;',
+        'varying vec2 vUv;',
+        VORONOI,
+        'vec3 getNoise(vec3 pos){',
+        '  float scale=1.5;',
+        '  vec3 noiseScale=vec3(scale,0.6,scale);',
+        '  float t=uTime*0.5;',
+        '  float offset=0.09;',
+        '  vec3 coords=pos+vec3(t*0.5,t,0.0);',
+        '  vec3 n=vec3(',
+        '    voronoi3d((coords+vec3(offset,0.0,0.0))*noiseScale).x,',
+        '    voronoi3d((coords+vec3(0.0,offset,0.0))*noiseScale).x,',
+        '    voronoi3d((coords+vec3(0.0,0.0,offset))*noiseScale).x',
+        '  );',
+        '  return clamp(pow(n,vec3(3.0)),0.0,1.0);',
+        '}',
+        'void main(){',
+        '  vec2 uv=vUv;',
+        '  uv.x += sin(uv.y*12.0+uTime*0.85)*0.018;',
+        '  uv.y += cos(uv.x*10.0+uTime*0.70)*0.014;',
+        '  vec3 n=getNoise(vec3(uv*7.0,uTime*0.08));',
+        '  float c=(n.x*0.52+n.y*0.30+n.z*0.20);',
+        '  c=smoothstep(0.16,0.82,c);',
+        '  vec3 col=vec3(0.78,0.93,1.0)*c*1.35;',
+        '  gl_FragColor=vec4(col,c*uOpacity);',
+        '}'
+      ].join('\n'),
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      depthTest: false,
     });
   }
 
-  /* ── Async pool tile texture loader ─────────────────────────────────────── */
-  function loadPoolTiles(onDone) {
-    var loader = new THREE.TextureLoader();
-    var base   = 'assets/caustics/';
-    var jobs   = [
-      { key: 'map',          file: 'tlfmffydy_4K_Albedo.jpg'    },
-      { key: 'normalMap',    file: 'tlfmffydy_4K_Normal.jpg'    },
-      { key: 'aoMap',        file: 'tlfmffydy_4K_AO.jpg'        },
-      { key: 'roughnessMap', file: 'tlfmffydy_4K_Roughness.jpg' },
-    ];
-    var result = {}, left = jobs.length;
-    function finish() { if (--left === 0) onDone(result); }
-    jobs.forEach(function(j) {
-      loader.load(
-        base + j.file,
-        function(tex) {
-          tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-          tex.repeat.set(15 / 4, 15 / 4);
-          result[j.key] = tex;
-          finish();
-        },
-        null,
-        function() { result[j.key] = null; finish(); }
-      );
-    });
-  }
-
-  /* ── Build the reference scene ───────────────────────────────────────────── */
-  function buildObjects(grp) {
-
-    /* Floor — PlaneGeometry(15,15), pool tile textures                       */
-    var floorGeo = new THREE.PlaneGeometry(15, 15);
-    var uvSrc    = floorGeo.attributes.uv;
-    var uv2Buf   = new THREE.BufferAttribute(new Float32Array(uvSrc.array), uvSrc.itemSize);
-    if (floorGeo.setAttribute) floorGeo.setAttribute('uv2', uv2Buf);
-    else                        floorGeo.addAttribute('uv2', uv2Buf);
-
-    var floorMat = new THREE.MeshStandardMaterial({
-      color: 0x5588dd, roughness: 0.05, metalness: 0.0,
-    });
-    var floorMesh = new THREE.Mesh(floorGeo, floorMat);
-    floorMesh.rotation.x = -Math.PI / 2;
-    floorMesh.receiveShadow = true;
-    grp.add(floorMesh);
-
-    loadPoolTiles(function(textures) {
-      if (textures.map)          floorMat.map          = textures.map;
-      if (textures.normalMap)    floorMat.normalMap     = textures.normalMap;
-      if (textures.aoMap)        floorMat.aoMap         = textures.aoMap;
-      if (textures.roughnessMap) {
-        floorMat.roughnessMap = textures.roughnessMap;
-        floorMat.roughness    = 0.05;
-      }
-      floorMat.needsUpdate = true;
-    });
-
-    /* Cylinder platform — reference: CylinderGeometry(5,5,0.1,32)           */
-    var cyl = new THREE.Mesh(
-      new THREE.CylinderGeometry(5, 5, 0.1, 32),
-      new THREE.MeshStandardMaterial({ color: 0x2255bb, roughness: 0.15, metalness: 0.2 })
-    );
-    cyl.position.y = 0.05;
-    cyl.receiveShadow = cyl.castShadow = true;
-    grp.add(cyl);
-
-    /* Blue box — reference: BoxGeometry(2,2,2) at [-3,1,-3]                 */
-    var boxL = new THREE.Mesh(
-      new THREE.BoxGeometry(2, 2, 2),
-      new THREE.MeshStandardMaterial({ color: 0x0066cc, roughness: 0.25 })
-    );
-    boxL.position.set(-3, 1, -3);
-    boxL.castShadow = boxL.receiveShadow = true;
-    grp.add(boxL);
-
-    /* Red box — reference: BoxGeometry(2,2,2) at [3,1,-3]                   */
-    var boxR = new THREE.Mesh(
-      new THREE.BoxGeometry(2, 2, 2),
-      new THREE.MeshStandardMaterial({ color: 0xcc2200, roughness: 0.25 })
-    );
-    boxR.position.set(3, 1, -3);
-    boxR.castShadow = boxR.receiveShadow = true;
-    grp.add(boxR);
-
-    /* SpotLight — reference: [-5,10,3], intensity≈600, angle=PI/4           */
-    var spot = new THREE.SpotLight(0xffffff, 3.0);
-    spot.position.set(SPOT_X, SPOT_Y, SPOT_Z);
-    spot.angle            = Math.PI / 4;
-    spot.penumbra         = 0.5;
-    spot.castShadow       = true;
-    spot.shadow.mapSize.width  = 1024;
-    spot.shadow.mapSize.height = 1024;
-    spot.target.position.set(0, 0, 0);
-    grp.add(spot);
-    grp.add(spot.target);
-
-    /* Ambient blue — reference: <ambientLight color="blue" intensity={2} /> */
-    grp.add(new THREE.AmbientLight(0x0033cc, 0.9));
-    /* Ambient fill — reference: <ambientLight intensity={0.5} />             */
-    grp.add(new THREE.AmbientLight(0x336688, 0.5));
-
-    /* Bronze monkey statue — reference: bronze_monkey_statue.glb             */
-    if (typeof THREE.GLTFLoader !== 'undefined') {
-      var gltfLoader = new THREE.GLTFLoader();
-      gltfLoader.load(
-        'assets/caustics/bronze_monkey_statue.glb',
-        function(gltf) {
-          var model = gltf.scene;
-          model.position.set(0, 0, 0);
-          model.traverse(function(obj) {
-            if (obj.isMesh) { obj.castShadow = obj.receiveShadow = true; }
-          });
-          grp.add(model);
-        },
-        null,
-        function() {
-          /* Fallback pedestal */
-          var ped = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.4, 0.55, 2.4, 16),
-            new THREE.MeshStandardMaterial({ color: 0xbb8822, roughness: 0.2, metalness: 0.7 })
-          );
-          ped.position.set(0, 1.2, 0);
-          ped.castShadow = ped.receiveShadow = true;
-          grp.add(ped);
-        }
-      );
-    }
-  }
-
-  /* ═══════════════════════════════════════════════════════════════════════ */
   function AquaCityBg(container) {
-    var w = window.innerWidth, h = window.innerHeight;
+    this._canvas = document.createElement('canvas');
+    this._canvas.style.cssText =
+      'position:fixed;inset:0;width:100%;height:100%;' +
+      'z-index:1;pointer-events:none;opacity:0;transition:opacity 0.65s ease;';
+    container.appendChild(this._canvas);
 
-    /* Canvas — no contrast filter (would crush dark background to black) */
-    var canvas = document.createElement('canvas');
-    canvas.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;';
-    canvas.style.opacity = '0';
-    container.appendChild(canvas);
-    this._canvas = canvas;
-
-    /* Renderer — reference: antialias:true, dpr=1 */
     this._ren = new THREE.WebGLRenderer({
-      canvas: canvas, antialias: true, alpha: false,
+      canvas: this._canvas,
+      antialias: true,
+      alpha: false,
       powerPreference: 'high-performance',
     });
-    this._ren.setPixelRatio(1);
-    this._ren.setSize(w, h);
-    this._ren.setClearColor(BG_HEX, 1);
-    this._ren.shadowMap.enabled  = true;
-    this._ren.shadowMap.type     = THREE.PCFSoftShadowMap;
-    this._ren.toneMapping        = THREE.ACESFilmicToneMapping;
-    this._ren.toneMappingExposure = 1.1;
+    this._ren.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    this._ren.setSize(window.innerWidth, window.innerHeight);
+    this._ren.setClearColor(BG, 1);
+    this._ren.shadowMap.enabled = true;
+    this._ren.shadowMap.type = THREE.PCFSoftShadowMap;
+    this._ren.toneMapping = THREE.ACESFilmicToneMapping;
+    this._ren.toneMappingExposure = 1.05;
 
-    /* Scene — reference: background="#0a0e27", fog("#0a0e27", 0, 30)        */
     this._sc = new THREE.Scene();
-    this._sc.background = new THREE.Color(BG_HEX);
-    this._sc.fog = new THREE.Fog(0x040c1e, 1, FOG_FAR);
+    this._sc.background = new THREE.Color(BG);
+    this._sc.fog = new THREE.Fog(BG, 0.1, 25);
 
-    /* Camera — FOV=50 matching reference */
-    this._cam = new THREE.PerspectiveCamera(CAM_FOV, w / h, 0.1, 200);
-    this._cam.position.set(-ORBIT_R, 2.5, ORBIT_R);
-    this._cam.lookAt(0, 1, 0);
+    this._cam = new THREE.PerspectiveCamera(
+      54, window.innerWidth / window.innerHeight, 0.1, 100
+    );
+    this._cam.position.set(0, 2.45, 7.2);
+    this._cam.lookAt(new THREE.Vector3(0, 1, -5));
 
-    /* Scene objects */
-    this._objectsGroup = new THREE.Group();
-    this._sc.add(this._objectsGroup);
-    buildObjects(this._objectsGroup);
+    this._time = 0;
+    this._target = 0;
+    this._iv = 0;
+    this._floats = [];
+    this._sideObjects = [];
+    this._poolSegments = [];
 
-    /* ── Screen-space Voronoi3D caustic overlay ────────────────────────── */
-    this._causticMat = makeCausticOverlay();
-    this._ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-    var ndqGeo  = new THREE.PlaneGeometry(2, 2);
-    this._overlayScene = new THREE.Scene();
-    this._overlayScene.add(new THREE.Mesh(ndqGeo, this._causticMat));
-
-    /* EffectComposer — Bloom matching reference intensity=1, threshold=0.7  */
-    this._useComposer = false;
-    try {
-      var P     = POSTPROCESSING;
-      var comp  = new P.EffectComposer(this._ren);
-      var rp    = new P.RenderPass(this._sc, this._cam);
-      var bloom = new P.BloomEffect({ intensity: 1.0, luminanceThreshold: 0.7, luminanceSmoothing: 0.025 });
-      var fxp   = new P.EffectPass(this._cam, bloom);
-      fxp.renderToScreen = true;
-      comp.addPass(rp);
-      comp.addPass(fxp);
-      this._composer    = comp;
-      this._useComposer = true;
-    } catch (e) { console.warn('AquaCityBg bloom:', e); }
-
-    /* State */
-    this._iv      = 0;
-    this._time    = 0;
-    this._orbit   = 0;
-    this._visible = false;
+    this._buildScene();
 
     var self = this;
-    this._onResize = function () { self._resize(); };
-    window.addEventListener('resize', this._onResize);
+    window.addEventListener('resize', function () { self._resize(); });
   }
 
-  /* ── Tick ─────────────────────────────────────────────────────────────── */
-  AquaCityBg.prototype.tick = function (dt) {
-    if (!this._visible) return;
+  AquaCityBg.prototype._buildScene = function () {
+    var self = this;
+    var tileMat = makeMat({ color: 0xffffff, roughness: 0.0 });
 
-    this._time  += dt;
-    /* Very slow orbit — full circle ≈ 2.5 min, gentle vertical bob         */
-    this._orbit += dt * 0.04;
-    var cx = ORBIT_R * Math.cos(this._orbit);
-    var cz = ORBIT_R * Math.sin(this._orbit);
-    var cy = 2.5 + Math.sin(this._orbit * 0.25) * 0.5;
-    this._cam.position.set(cx, cy, cz);
-    this._cam.lookAt(0, 1, 0);
+    var texLoader = new THREE.TextureLoader();
+    [
+      ['map', 'tlfmffydy_4K_Albedo.jpg'],
+      ['aoMap', 'tlfmffydy_4K_AO.jpg'],
+      ['normalMap', 'tlfmffydy_4K_Normal.jpg'],
+      ['roughnessMap', 'tlfmffydy_4K_Roughness.jpg']
+    ].forEach(function (item) {
+      texLoader.load(ASSET_BASE + item[1], function (tex) {
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        tex.repeat.set(SIZE / 4, SIZE / 4);
+        tileMat[item[0]] = tex;
+        tileMat.needsUpdate = true;
+      });
+    });
 
-    /* Update caustic overlay uniforms */
-    this._causticMat.uniforms.uTime.value   = this._time;
-    this._causticMat.uniforms.uAspect.value = this._ren.domElement.width / this._ren.domElement.height;
+    function addPoolSegment(z, index) {
+      var group = new THREE.Group();
+      group.position.z = z;
+      self._sc.add(group);
 
-    /* ── Render: scene via composer (bloom) ────────────────────────────── */
-    if (this._useComposer) {
-      this._composer.render(dt);
-    } else {
-      this._ren.render(this._sc, this._cam);
+      function segFloor(x, y, localZ, rx, ry, sx, sy) {
+        var geo = new THREE.PlaneGeometry(sx, sy, 1, 1);
+        addUv2(geo);
+        var mesh = new THREE.Mesh(geo, tileMat);
+        mesh.position.set(x, y, localZ);
+        mesh.rotation.x = rx || 0;
+        mesh.rotation.y = ry || 0;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        group.add(mesh);
+      }
+
+      segFloor(0, 0, 0, -Math.PI / 2, 0, 11, 8);
+      segFloor(-4.35, 3.05, 0, 0, Math.PI / 2, 8, 6.1);
+      segFloor(4.35, 3.05, 0, 0, -Math.PI / 2, 8, 6.1);
+
+      self._poolSegments.push({
+        group: group,
+        z: z,
+        phase: index * 0.8,
+        baseX: group.position.x,
+        baseY: group.position.y
+      });
     }
 
-    /* ── Overlay: Voronoi3D caustic quad on top (additive) ─────────────── */
-    this._ren.autoClear = false;
-    this._ren.render(this._overlayScene, this._ortho);
-    this._ren.autoClear = true;
+    for (var si = 0; si < POOL_SEGMENT_COUNT; si++) {
+      addPoolSegment(-si * POOL_SEGMENT_SPACING, si);
+    }
+
+    var spot = new THREE.SpotLight(0xffffff, 4.0);
+    spot.position.set(-5, 10, 3);
+    spot.angle = Math.PI / 4;
+    spot.penumbra = 0.5;
+    spot.castShadow = true;
+    spot.shadow.mapSize.width = 1024;
+    spot.shadow.mapSize.height = 1024;
+    spot.target.position.set(0, 0, 0);
+    this._sc.add(spot);
+    this._sc.add(spot.target);
+    this._sc.add(new THREE.AmbientLight(0x0000ff, 1.6));
+    this._sc.add(new THREE.AmbientLight(0xffffff, 0.55));
+
+    function addSideObject(obj, lane, z, phase, rotOffset) {
+      obj.position.set(lane, 1.35, z);
+      obj.rotation.y = (lane < 0 ? -Math.PI / 5 : Math.PI + Math.PI / 5) + (rotOffset || 0);
+      self._sc.add(obj);
+      self._sideObjects.push({
+        obj: obj,
+        lane: lane,
+        z: z,
+        phase: phase,
+        baseY: obj.position.y,
+        baseRotX: obj.rotation.x,
+        baseRotY: obj.rotation.y,
+        amp: 0.16 + (phase % 3) * 0.025
+      });
+    }
+
+    function makeSideBox(size, color) {
+      var mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(size, size, size),
+        makeMat({ color: color, roughness: 0.1 })
+      );
+      mesh.castShadow = mesh.receiveShadow = true;
+      return mesh;
+    }
+
+    addSideObject(makeSideBox(0.95, 0x00ffff), -3.30, -4, 0.8, -0.18);
+    addSideObject(makeSideBox(0.72, 0xff0000), 3.30, -9, 1.7, 0.46);
+    addSideObject(makeSideBox(0.85, 0x00ffff), -3.58, -15, 2.6, 0.14);
+    addSideObject(makeSideBox(0.65, 0xff0000), 3.58, -21, 3.4, -0.52);
+
+    if (typeof THREE.GLTFLoader !== 'undefined') {
+      new THREE.GLTFLoader().load(GLB_PATH, function (gltf) {
+        var root = gltf.scene || gltf.scenes[0];
+        var source = root && root.getObjectByName ? root.getObjectByName('Object_4') : null;
+        var model;
+        if (source && source.geometry) {
+          model = new THREE.Mesh(
+            source.geometry,
+            makeMat({ color: 0xff6347, roughness: 0.1, metalness: 0.0 })
+          );
+          model.rotation.x = -35 * Math.PI / 180;
+        } else {
+          model = root;
+        }
+        var lanes = [-3.18, 3.18, -3.68, 3.68, -3.38, 3.38];
+        var zs = [-2, -6.5, -11, -15.5, -20, -24.5];
+        var rots = [-0.28, 0.62, 0.34, -0.48, 0.12, 0.88];
+        lanes.forEach(function (lane, i) {
+          var clone = model.clone();
+          clone.traverse(function (obj) {
+            if (obj.isMesh) {
+              obj.castShadow = true;
+              obj.receiveShadow = true;
+              obj.material = makeMat({ color: 0xff6347, roughness: 0.1, metalness: 0.0 });
+            }
+          });
+          clone.scale.setScalar(0.92);
+          addSideObject(clone, lane, zs[i], i * 0.7, rots[i]);
+        });
+        self._glbLoaded = true;
+      }, null, function (err) {
+        console.warn('AquaCityBg GLB load failed:', err);
+      });
+    }
+
+    this._causticMat = makeCausticMaterial();
+    var caustic = new THREE.Mesh(new THREE.PlaneGeometry(12, 12), this._causticMat);
+    caustic.position.set(0, 0.018, 0);
+    caustic.rotation.x = -Math.PI / 2;
+    caustic.renderOrder = 10;
+    this._sc.add(caustic);
   };
 
-  /* ── Show / hide / intensity ──────────────────────────────────────────── */
   AquaCityBg.prototype.show = function () {
     this._canvas.style.opacity = '1';
-    this._visible = true;
   };
 
   AquaCityBg.prototype.hide = function () {
     this._canvas.style.opacity = '0';
-    this._visible = false;
   };
 
-  AquaCityBg.prototype.setIntensity = function (iv) {
-    this._iv = iv;
-    /* Slightly faster time when engine running */
-    this._causticMat.uniforms.uOpacity.value = 0.55 + iv * 0.15;
+  AquaCityBg.prototype.setIntensity = function (v) {
+    this._target = Math.max(0, Math.min(1, +v || 0));
   };
 
-  /* ── Resize ───────────────────────────────────────────────────────────── */
+  AquaCityBg.prototype.tick = function (dt) {
+    this._time += dt;
+    this._iv += (this._target - this._iv) * Math.min(dt * 2.5, 1);
+
+    var t = this._time;
+    var cx = Math.sin(t * 0.18) * (0.35 + this._iv * 0.22);
+    var cy = 2.45 + Math.sin(t * 0.13) * 0.28;
+    var cz = 7.2 + Math.cos(t * 0.16) * 0.38;
+    this._cam.position.set(cx, cy, cz);
+    this._cam.lookAt(new THREE.Vector3(0, 1.0, -5.2 - this._iv * 1.2));
+
+    this._floats.forEach(function (f) {
+      f.obj.position.y = f.baseY + Math.sin(t * 0.9 + f.phase) * f.amp;
+      f.obj.rotation.x += dt * f.rot * 0.45;
+      f.obj.rotation.y += dt * f.rot;
+    });
+
+    var sideSpeed = 5.8 + this._iv * 22.0;
+    var shake = 0.035 + this._iv * 0.18;
+
+    this._poolSegments.forEach(function (p) {
+      p.z += sideSpeed * dt;
+      while (p.z > 18) p.z -= POOL_SEGMENT_PERIOD;
+      p.group.position.z = p.z;
+      p.group.position.x = p.baseX;
+      p.group.position.y = p.baseY;
+      p.group.rotation.x = 0;
+      p.group.rotation.z = 0;
+    }, this);
+
+    this._sideObjects.forEach(function (s) {
+      s.z += sideSpeed * dt;
+      while (s.z > 12) s.z -= 40;
+
+      var wave = Math.sin(t * (2.4 + this._iv * 7.0) + s.phase);
+      s.obj.position.z = s.z;
+      s.obj.position.x = s.lane + wave * shake;
+      s.obj.position.y = s.baseY + Math.sin(t * 1.4 + s.phase) * s.amp + this._iv * 0.08;
+      s.obj.rotation.x = s.baseRotX + Math.sin(t * 2.0 + s.phase) * (0.08 + this._iv * 0.18);
+      s.obj.rotation.y = s.baseRotY + Math.sin(t * 1.6 + s.phase) * (0.10 + this._iv * 0.22);
+      var fadeIn = Math.max(0, Math.min(1, (-26 - s.z) / -10));
+      var fadeOut = Math.max(0, Math.min(1, (12 - s.z) / 8));
+      setObjectOpacity(s.obj, Math.min(fadeIn, fadeOut));
+    }, this);
+
+    this._causticMat.uniforms.uTime.value = t * (1 + this._iv * 0.35);
+    this._causticMat.uniforms.uOpacity.value = 0.42 + this._iv * 0.16;
+
+    this._ren.render(this._sc, this._cam);
+  };
+
   AquaCityBg.prototype._resize = function () {
-    var w = window.innerWidth, h = window.innerHeight;
+    var w = window.innerWidth;
+    var h = window.innerHeight;
     this._cam.aspect = w / h;
     this._cam.updateProjectionMatrix();
     this._ren.setSize(w, h);
-    this._causticMat.uniforms.uAspect.value = w / h;
-    if (this._composer) this._composer.setSize(w, h);
   };
 
   global.AquaCityBg = AquaCityBg;
-
 })(window);
