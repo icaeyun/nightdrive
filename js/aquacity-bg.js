@@ -30,7 +30,7 @@
   var PROP_ROUTE_EMPTY_DISTANCE = 1900;
   var PROP_ROUTE_Z_A = -42;
   var PROP_ROUTE_Z_B = -68;
-  var HEAVY_ROUTE_EVERY = 0;
+  var HEAVY_ROUTE_EVERY = 11;
 
   var VORONOI = [
     'vec3 hash(vec3 p){',
@@ -212,6 +212,9 @@
     this._propEmptyRemaining = 0;
     this._propLoadToken = 0;
     this._propLoading = false;
+    this._heavyLoadToken = 0;
+    this._heavyFailedKeys = {};
+    this._heavyRouteActive = false;
 
     this._buildScene();
     this._preloadAllProps();
@@ -502,9 +505,11 @@
         this._propRouteIndex > 0 &&
         this._propRouteIndex % HEAVY_ROUTE_EVERY === 0 &&
         HEAVY_PROP_FILES.length) {
-      return [
-        propSpec(HEAVY_PROP_FILES[(this._propRouteIndex / HEAVY_ROUTE_EVERY - 1) % HEAVY_PROP_FILES.length], true)
-      ];
+      var hFile = HEAVY_PROP_FILES[(this._propRouteIndex / HEAVY_ROUTE_EVERY - 1) % HEAVY_PROP_FILES.length];
+      var hKey = HEAVY_PROP_BASE + hFile;
+      if (this._poolPropCache[hKey]) {
+        return [propSpec(hFile, true)];
+      }
     }
     return [
       propSpec(POOL_PROP_FILES[lightStart], false)
@@ -527,8 +532,10 @@
         self._propRouteIndex += 1;
         return;
       }
+      var isHeavy = !!(pair[0] && pair[0].heavy);
       self._propRoutePair = pair;
-      self._propRouteRepeats = 0;
+      self._propRouteRepeats = isHeavy ? PROP_ROUTE_REPEATS - 1 : 0;
+      self._heavyRouteActive = isHeavy;
       self._propRouteState = 'route';
       self._resetPropRoutePass();
     });
@@ -605,6 +612,48 @@
     this._propRouteRepeats += 1;
   };
 
+  AquaCityBg.prototype._maybePreloadNextHeavy = function () {
+    if (!HEAVY_ROUTE_EVERY || !HEAVY_PROP_FILES.length) return;
+    if (typeof THREE.GLTFLoader === 'undefined') return;
+    var nextIndex = this._propRouteIndex + 1;
+    if (nextIndex % HEAVY_ROUTE_EVERY !== 0) return;
+    var hFile = HEAVY_PROP_FILES[(nextIndex / HEAVY_ROUTE_EVERY - 1) % HEAVY_PROP_FILES.length];
+    var hKey = HEAVY_PROP_BASE + hFile;
+    if (this._poolPropCache[hKey] || this._heavyFailedKeys[hKey]) return;
+    var self = this;
+    var token = ++this._heavyLoadToken;
+    new THREE.GLTFLoader().load(
+      HEAVY_PROP_BASE + encodeURIComponent(hFile),
+      function (gltf) {
+        if (token !== self._heavyLoadToken) return;
+        var root = gltf.scene || gltf.scenes[0];
+        if (!root) { self._heavyFailedKeys[hKey] = true; return; }
+        root.traverse(function (node) {
+          if (!node.isMesh) return;
+          node.castShadow = false;
+          node.receiveShadow = false;
+          if (node.material) {
+            node.material = node.material.clone();
+            node.material.transparent = true;
+            node.material.opacity = 1;
+          }
+        });
+        deskinRoot(root);
+        var box = new THREE.Box3().setFromObject(root);
+        var size = box.getSize(new THREE.Vector3());
+        var center = box.getCenter(new THREE.Vector3());
+        var maxDim = Math.max(size.x, size.y, size.z, 0.001);
+        var normalized = new THREE.Group();
+        root.position.sub(center);
+        normalized.add(root);
+        self._poolPropCache[hKey] = { file: hFile, heavy: true, root: normalized, maxDim: maxDim };
+        self._warmupGPU(normalized);
+      },
+      undefined,
+      function () { self._heavyFailedKeys[hKey] = true; }
+    );
+  };
+
   AquaCityBg.prototype._warmupGPU = function (obj) {
     var tmpScene = new THREE.Scene();
     var tmpTarget = new THREE.WebGLRenderTarget(2, 2);
@@ -628,7 +677,18 @@
     this._target = 0;
     this._propLoading = false;
     this._propLoadToken += 1;
+    this._heavyLoadToken += 1;
+    var wasHeavy = this._heavyRouteActive;
+    var hEntry = wasHeavy && this._propRoutePair && this._propRoutePair[0];
+    this._heavyRouteActive = false;
     this._clearPropRoute();
+    if (wasHeavy && hEntry) {
+      var hKey = HEAVY_PROP_BASE + hEntry.file;
+      if (this._poolPropCache[hKey]) {
+        disposePropObject(this._poolPropCache[hKey].root, true);
+        delete this._poolPropCache[hKey];
+      }
+    }
     this._propRouteState = 'intro';
     this._canvas.style.opacity = '0';
   };
@@ -723,9 +783,20 @@
         if (this._propRouteRepeats < PROP_ROUTE_REPEATS) {
           this._resetPropRoutePass();
         } else {
+          var wasHeavy = this._heavyRouteActive;
+          var heavyEntry = wasHeavy && this._propRoutePair && this._propRoutePair[0];
+          this._heavyRouteActive = false;
           this._clearPropRoute();
+          if (wasHeavy && heavyEntry) {
+            var hKey = HEAVY_PROP_BASE + heavyEntry.file;
+            if (this._poolPropCache[hKey]) {
+              disposePropObject(this._poolPropCache[hKey].root, true);
+              delete this._poolPropCache[hKey];
+            }
+          }
           this._propRouteState = 'empty';
           this._propEmptyRemaining = PROP_ROUTE_EMPTY_DISTANCE;
+          this._maybePreloadNextHeavy();
         }
       }
     }
