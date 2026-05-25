@@ -120,6 +120,7 @@
     this._moonTex    = null;
     this._sunModel   = null;
     this._sunModelSize = 1;
+    this._spaceBlend = 0;
 
     /* Cached colour instances for lerp — avoids per-frame GC */
     this._C = {
@@ -172,6 +173,8 @@
     this._onResize = function () { self.resize(); };
     window.addEventListener('resize', this._onResize);
 
+    this._roadBg    = document.getElementById('road-bg');
+    this._tunnelWash = document.getElementById('sky-tunnel-wash');
     this._ren.render(this._scene, this._cam);
   };
 
@@ -546,6 +549,8 @@
 
   SkySpaceBg.prototype.hide = function () {
     this._cv.style.opacity = '0';
+    if (this._roadBg)    this._roadBg.style.setProperty('--mode1-road-sky-wash', '0');
+    if (this._tunnelWash) this._tunnelWash.style.opacity = '0';
     var cv = this._cv;
     setTimeout(function () {
       if (parseFloat(cv.style.opacity) < 0.05) cv.style.display = 'none';
@@ -554,6 +559,10 @@
 
   SkySpaceBg.prototype.setIntensity = function (v) {
     this._intensity = clamp(v || 0, 0, 1);
+  };
+
+  SkySpaceBg.prototype.getSpaceBlend = function () {
+    return this._spaceBlend || 0;
   };
 
   SkySpaceBg.prototype.resize = function () {
@@ -574,11 +583,18 @@
     /* ── Phase scalars ──────────────────────────────────── */
     /* transF: 0 during sky, reaches 1 at TRANS_END=28 s    */
     var transF = smoothstep(CLOUD_OUT_END, TRANS_END, t);
+    this._spaceBlend = transF;
     /* cloudF: fade-in 0–2 s, full 2–14 s, fade-out 14–20 s */
     var cloudF = smoothstep(0, CLOUD_IN_END, t) *
                  (1 - smoothstep(CLOUD_OUT_SRT, CLOUD_OUT_END, t));
     /* spaceF: streaming strength, 0 until TRANS_END, full by +4 s */
     var spaceF = smoothstep(TRANS_END, TRANS_END + 4, t);
+
+    /* ── Tunnel sky-wash: brightens the dark road vanishing point
+          during sky phase, fades back to dark in space          */
+    var wash = smoothstep(0, CLOUD_IN_END, t) * (1 - transF);
+    if (this._roadBg)    this._roadBg.style.setProperty('--mode1-road-sky-wash', wash.toFixed(3));
+    if (this._tunnelWash) this._tunnelWash.style.opacity = wash.toFixed(3);
 
     /* ── Sky dome ─────────────────────────────────────────── */
     this._skyMat.uniforms.uTop.value

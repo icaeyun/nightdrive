@@ -686,6 +686,13 @@
       { x: 1620, keys: BIG_KEYS,   n: 28, large: true,  phOff: 0.79 },
       { x:-1820, keys: TOWER_KEYS, n: 27, large: true,  phOff: 0.08 },
       { x: 1820, keys: TOWER_KEYS, n: 27, large: true,  phOff: 0.58 },
+      /* Wide-x edge fill — visible at high altitude from screen sides */
+      { x:-2100, keys: TOWER_KEYS, n: 26, large: true,  phOff: 0.19 },
+      { x: 2100, keys: TOWER_KEYS, n: 26, large: true,  phOff: 0.69 },
+      { x:-2550, keys: TOWER_KEYS, n: 24, large: true,  phOff: 0.38 },
+      { x: 2550, keys: TOWER_KEYS, n: 24, large: true,  phOff: 0.88 },
+      { x:-3100, keys: BIG_KEYS,   n: 22, large: true,  phOff: 0.55 },
+      { x: 3100, keys: BIG_KEYS,   n: 22, large: true,  phOff: 0.05 },
     ];
 
     COLS.forEach(function (col) {

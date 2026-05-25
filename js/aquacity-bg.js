@@ -214,6 +214,7 @@
     this._propLoading = false;
 
     this._buildScene();
+    this._preloadAllProps();
 
     var self = this;
     window.addEventListener('resize', function () { self._resize(); });
@@ -357,6 +358,19 @@
     this._sc.add(caustic);
   };
 
+  function deskinRoot(root) {
+    var skins = [];
+    root.traverse(function (node) { if (node.isSkinnedMesh) skins.push(node); });
+    skins.forEach(function (sm) {
+      var m = new THREE.Mesh(sm.geometry, sm.material);
+      m.name = sm.name;
+      m.position.copy(sm.position);
+      m.quaternion.copy(sm.quaternion);
+      m.scale.copy(sm.scale);
+      if (sm.parent) { sm.parent.add(m); sm.parent.remove(sm); }
+    });
+  }
+
   function propSpec(file, heavy) {
     return {
       file: file,
@@ -365,8 +379,55 @@
     };
   }
 
-  AquaCityBg.prototype._loadPoolPropEntry = function (spec, done) {
+  AquaCityBg.prototype._preloadAllProps = function () {
     var self = this;
+    if (typeof THREE.GLTFLoader === 'undefined') return;
+    var specs = POOL_PROP_FILES.map(function (f) { return propSpec(f, false); });
+    var i = 0;
+    function loadNext() {
+      if (i >= specs.length) return;
+      var spec = specs[i++];
+      var key = spec.base + spec.file;
+      if (self._poolPropCache[key]) { loadNext(); return; }
+      new THREE.GLTFLoader().load(
+        spec.base + encodeURIComponent(spec.file),
+        function (gltf) {
+          var root = gltf.scene || gltf.scenes[0];
+          if (root) {
+            root.traverse(function (node) {
+              if (!node.isMesh) return;
+              node.castShadow = false;
+              node.receiveShadow = false;
+              if (node.material) {
+                node.material = node.material.clone();
+                node.material.transparent = true;
+                node.material.opacity = 1;
+              }
+            });
+            deskinRoot(root);
+            var box = new THREE.Box3().setFromObject(root);
+            var size = box.getSize(new THREE.Vector3());
+            var center = box.getCenter(new THREE.Vector3());
+            var maxDim = Math.max(size.x, size.y, size.z, 0.001);
+            var normalized = new THREE.Group();
+            root.position.sub(center);
+            normalized.add(root);
+            self._poolPropCache[key] = { file: spec.file, heavy: false, root: normalized, maxDim: maxDim };
+            self._warmupGPU(normalized);
+          }
+          loadNext();
+        },
+        undefined,
+        function (err) {
+          console.warn('AquaCityBg preload skipped:', spec.file, err);
+          loadNext();
+        }
+      );
+    }
+    loadNext();
+  };
+
+  AquaCityBg.prototype._loadPoolPropEntry = function (spec, done) {
     var key = spec.base + spec.file;
     if (this._poolPropCache[key]) {
       done(this._poolPropCache[key]);
@@ -378,11 +439,7 @@
       return;
     }
 
-    Object.keys(this._poolPropCache).forEach(function (cacheKey) {
-      disposePropObject(self._poolPropCache[cacheKey].root, true);
-      delete self._poolPropCache[cacheKey];
-    });
-
+    var self = this;
     new THREE.GLTFLoader().load(
       spec.base + encodeURIComponent(spec.file),
       function (gltf) {
@@ -404,6 +461,7 @@
           }
         });
 
+        deskinRoot(root);
         var box = new THREE.Box3().setFromObject(root);
         var size = box.getSize(new THREE.Vector3());
         var center = box.getCenter(new THREE.Vector3());
@@ -418,6 +476,7 @@
           maxDim: maxDim
         };
         self._poolPropCache[key] = entry;
+        self._warmupGPU(normalized);
         done(self._poolPropCache[key]);
       },
       undefined,
@@ -507,7 +566,7 @@
       spinY: rnd(-0.38, 0.38),
       spinZ: rnd(-0.18, 0.18),
       phase: rnd(0, Math.PI * 2),
-      baseY: isCharacterProp ? rnd(1.75, 2.28) : rnd(1.18, 1.82),
+      baseY: isCharacterProp ? (targetSize / 2 + rnd(0.05, 0.20)) : rnd(1.18, 1.82),
       amp: rnd(0.08, 0.16),
       meshes: meshes,
       lastOpacity: -1
@@ -544,6 +603,19 @@
       });
     }
     this._propRouteRepeats += 1;
+  };
+
+  AquaCityBg.prototype._warmupGPU = function (obj) {
+    var tmpScene = new THREE.Scene();
+    var tmpTarget = new THREE.WebGLRenderTarget(2, 2);
+    tmpScene.add(obj);
+    try {
+      this._ren.setRenderTarget(tmpTarget);
+      this._ren.render(tmpScene, this._cam);
+    } catch (e) {}
+    this._ren.setRenderTarget(null);
+    tmpTarget.dispose();
+    tmpScene.remove(obj);
   };
 
   AquaCityBg.prototype.show = function () {

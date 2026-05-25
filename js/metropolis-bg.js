@@ -51,7 +51,7 @@
     this._cityMinZ = -18;
     this._cityMaxZ = 24;
     this._citySpan = this._cityMaxZ - this._cityMinZ;
-    this._look = new THREE.Vector3(0, 6.5, 5);
+    this._look = new THREE.Vector3(0, 8.5, 22);
 
     this._canvas = document.createElement('canvas');
     this._canvas.style.cssText =
@@ -86,7 +86,7 @@
     this.scene.fog = new THREE.Fog(0x000000, 22, 72);
 
     this.camera = new THREE.PerspectiveCamera(64, 1, 0.1, 1200);
-    this.camera.position.set(0, 9.0, -12);
+    this.camera.position.set(0, 12.0, -12);
     this.camera.lookAt(this._look);
 
     this._buildRebeccaFallback();
@@ -137,10 +137,24 @@
       if (city.position.z < this._cityMinZ) city.position.z += this._citySpan;
     }
 
+    /* Slow drift biased upward: sin*0.7+0.3 → rises by +3.0, dips only -1.2
+       Camera spends most time at mid-high (14–18), rarely touches the floor. */
+    var SL_FREQ = Math.PI * 2 / 18;
+    var RC_FREQ = Math.PI * 2 / 2.2;
+    var RC_AMP  = 1.2;
+    var camY = 14.0
+      + 2.1 * Math.sin(this._time * SL_FREQ) + 0.7
+      + Math.sin(this._time * RC_FREQ) * RC_AMP;
+    var velY = 2.1 * SL_FREQ * Math.cos(this._time * SL_FREQ)
+             + RC_AMP * RC_FREQ * Math.cos(this._time * RC_FREQ);
     this.camera.position.x = 0;
-    this.camera.position.y = 9.0 + Math.sin(this._time * 0.23) * 0.08;
-    this._look.set(0, 6.5, 5);
+    this.camera.position.y = camY;
+    this._look.set(0, camY + velY * 0.50, 22);
     this.camera.lookAt(this._look);
+
+    /* At high altitude push fog far out so the full GLB city is visible */
+    this.scene.fog.far = 72 + Math.max(0, camY - 10) * 20;
+
     this.renderer.render(this.scene, this.camera);
   };
 
