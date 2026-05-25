@@ -56,6 +56,7 @@ html, body {
   inset: 0;
   z-index: 5;
   background: transparent;
+  --mode1-road-sky-wash: 0;
   /* Keep InfiniteLights opaque in the center road channel,
      transparent on sides so the city shows through */
   -webkit-mask-image: radial-gradient(
@@ -74,6 +75,23 @@ html, body {
     rgba(0,0,0,0.20) 62%,
     transparent 78%
   );
+}
+
+#road-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: var(--mode1-road-sky-wash);
+  transition: opacity 0.18s linear;
+  background:
+    radial-gradient(
+      ellipse 34% 38% at 50% 39%,
+      rgba(185, 228, 244, 0.72) 0%,
+      rgba(148, 207, 231, 0.46) 36%,
+      rgba(93, 169, 214, 0.18) 62%,
+      transparent 82%
+    );
 }
 
 #road-bg canvas {
